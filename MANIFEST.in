@@ -1,0 +1,10 @@
+include LICENSE
+include README.md
+include requirements.txt
+include requirements-dev.txt
+include pyproject.toml
+include .env.example
+
+graft resume_customizer
+
+global-exclude *.py[cod] __pycache__ *.so .DS_Store

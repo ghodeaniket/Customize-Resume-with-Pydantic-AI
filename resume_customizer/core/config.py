@@ -40,11 +40,17 @@ class Settings(BaseSettings):
     
     # File Upload Settings
     MAX_UPLOAD_SIZE: int = 10485760  # 10MB in bytes
-    ALLOWED_EXTENSIONS: List[str] = ["pdf", "docx"]
+    ALLOWED_EXTENSIONS: List[str] = ["pdf", "docx", "txt"]
     UPLOAD_DIRECTORY: str = "./uploads"
+    
+    # Caching
+    ENABLE_CACHE: bool = True
+    CACHE_TTL: int = 3600  # Default cache TTL in seconds (1 hour)
+    REDIS_URL: Optional[str] = None  # Redis connection URL (None for in-memory cache)
     
     # Logging
     LOG_LEVEL: str = "INFO"
+    ENABLE_PERFORMANCE_LOGGING: bool = True
     
     class Config:
         """Pydantic configuration for Settings."""

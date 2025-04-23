@@ -1,0 +1,50 @@
+Senior Backend Engineer - Python/FastAPI
+TechInnovate Inc.
+
+About Us:
+TechInnovate Inc. is a fast-growing startup revolutionizing the fintech industry with our innovative payment processing platform. Our platform handles millions of transactions daily for businesses worldwide. We're looking for talented engineers who are passionate about building scalable, secure, and reliable systems.
+
+Job Description:
+We are seeking an experienced Senior Backend Engineer to join our Engineering team. In this role, you will design, develop, and maintain the core services that power our payment processing platform. You will work closely with cross-functional teams to deliver high-quality features that meet business requirements.
+
+Responsibilities:
+- Design, build, and maintain scalable backend services using Python
+- Write clean, efficient, and well-tested code
+- Collaborate with frontend engineers, product managers, and design teams to define and implement new features
+- Optimize database queries and ensure high performance
+- Implement robust error handling and monitoring systems
+- Participate in code reviews and mentor junior engineers
+- Troubleshoot and resolve complex production issues
+- Stay up-to-date with latest technologies and best practices
+
+Requirements:
+- 5+ years of experience in backend development
+- Strong proficiency in Python
+- Experience with FastAPI, Django, or similar frameworks
+- Solid understanding of RESTful API design principles
+- Experience with relational databases (PostgreSQL preferred)
+- Knowledge of cloud services (AWS, GCP, or Azure)
+- Experience with containerization technologies (Docker, Kubernetes)
+- Understanding of microservices architecture
+- Excellent problem-solving and debugging skills
+
+Nice to Have:
+- Experience with asynchronous programming in Python
+- Knowledge of message queues (RabbitMQ, Kafka)
+- Experience with GraphQL
+- Familiarity with payment processing systems
+- Experience with CI/CD pipelines
+- Contributions to open source projects
+
+Benefits:
+- Competitive salary and equity
+- Comprehensive health, dental, and vision insurance
+- Flexible working hours and remote work options
+- Professional development budget
+- 401(k) matching
+- Paid parental leave
+- Modern office in downtown San Francisco with snacks and catered lunches
+
+TechInnovate Inc. is an equal opportunity employer. We celebrate diversity and are committed to creating an inclusive environment for all employees.
+
+To apply, please submit your resume and a brief cover letter describing why you're interested in joining TechInnovate.

@@ -3,7 +3,8 @@
 import os
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import AnyHttpUrl, BaseSettings, validator
+from pydantic import AnyHttpUrl, validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -20,6 +21,10 @@ class Settings(BaseSettings):
     # OpenRouter Settings
     OPENROUTER_API_KEY: str
     DEFAULT_MODEL: str = "deepseek/deepseek-r1-distill-llama-70b"
+    
+    # OpenAI Settings (not prefixed since used directly by OpenAI library)
+    # This is outside of the RESUME_CUSTOMIZER_ prefix
+    OPENAI_API_KEY: Optional[str] = None
     
     # Security
     SECRET_KEY: str
@@ -58,6 +63,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         env_prefix = "RESUME_CUSTOMIZER_"  # Look for env vars with this prefix
+        extra = "ignore"  # Allow extra fields in the environment
 
 
 # Instantiate settings

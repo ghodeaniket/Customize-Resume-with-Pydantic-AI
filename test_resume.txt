@@ -1,0 +1,51 @@
+JOHN SMITH
+123 Main Street, San Francisco, CA 94110
+(555) 123-4567 | john.smith@email.com | linkedin.com/in/johnsmith
+
+SUMMARY
+Senior Software Engineer with 8+ years of experience building scalable web applications using Python and JavaScript. Expertise in backend development, cloud architecture, and DevOps practices. Passionate about creating elegant solutions to complex problems.
+
+SKILLS
+- Languages: Python, JavaScript, TypeScript, SQL, HTML/CSS
+- Frameworks: Django, FastAPI, React, Node.js, Express
+- Cloud: AWS (EC2, S3, Lambda, CloudFormation), GCP, Docker, Kubernetes
+- Databases: PostgreSQL, MongoDB, Redis
+- Tools: Git, CI/CD, Jira, Confluence, Agile methodologies
+
+EXPERIENCE
+Senior Software Engineer | TechCorp | San Francisco, CA | 2021 - Present
+- Led a team of 5 engineers in developing a microservices architecture that reduced system response time by 40%
+- Designed and implemented a new API gateway using FastAPI that handles 200+ requests per second
+- Automated deployment pipelines with GitHub Actions, reducing deployment time from hours to minutes
+- Mentored junior developers through code reviews and pair programming sessions
+
+Software Engineer | DataSystems Inc. | Oakland, CA | 2018 - 2021
+- Built scalable data processing pipelines using Python and AWS Lambda that processed 5TB+ of data daily
+- Developed a real-time dashboard using React and WebSockets that improved monitoring capabilities
+- Optimized PostgreSQL database queries, reducing response times by 60%
+- Collaborated with cross-functional teams to deliver features meeting business requirements
+
+Junior Developer | WebStart | San Jose, CA | 2016 - 2018
+- Created RESTful APIs using Django for a customer-facing web application
+- Implemented responsive UI components with React and Bootstrap
+- Participated in agile development processes, including daily standups and sprint planning
+
+EDUCATION
+Bachelor of Science in Computer Science
+University of California, Berkeley | 2016
+- GPA: 3.8/4.0
+- Relevant coursework: Data Structures, Algorithms, Database Systems, Web Development
+
+PROJECTS
+Personal Portfolio Website
+- Built a personal portfolio website using Next.js, Tailwind CSS, and Vercel
+- Implemented responsive design and animations to enhance user experience
+
+Open Source Contribution
+- Contributed to Django Rest Framework, fixing bugs and improving documentation
+- Participated in code reviews and collaborated with the open-source community
+
+CERTIFICATIONS
+- AWS Certified Solutions Architect - Associate
+- Docker Certified Associate
+- MongoDB Certified Developer

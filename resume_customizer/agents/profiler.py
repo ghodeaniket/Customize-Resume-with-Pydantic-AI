@@ -59,7 +59,7 @@ what makes this professional unique rather than simply restating resume facts.
 
 # Initialize the Profiler agent
 profiler_agent = Agent(
-    'openrouter',
+    'openai:gpt-4',  # Using OpenAI as a fallback instead of OpenRouter
     deps_type=ResumeCustomizerDeps,
     output_type=ProfessionalProfile,
     system_prompt=PROFILER_SYSTEM_PROMPT,

@@ -58,7 +58,7 @@ structured to pass ATS screening and impress human reviewers.
 
 # Initialize the Strategist agent
 strategist_agent = Agent(
-    'openrouter',
+    'openai:gpt-4',  # Using OpenAI as a fallback instead of OpenRouter
     deps_type=ResumeCustomizerDeps,
     output_type=str,  # Markdown formatted resume
     system_prompt=STRATEGIST_SYSTEM_PROMPT,

@@ -3,7 +3,8 @@
 from resume_customizer.services.cache.provider import (
     CacheProvider,
     InMemoryCacheProvider,
-    RedisCacheProvider
+    RedisCacheProvider,
+    get_cache_provider
 )
 
-__all__ = ["CacheProvider", "InMemoryCacheProvider", "RedisCacheProvider"]
+__all__ = ["CacheProvider", "InMemoryCacheProvider", "RedisCacheProvider", "get_cache_provider"]

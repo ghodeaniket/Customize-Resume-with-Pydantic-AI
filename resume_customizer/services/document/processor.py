@@ -44,7 +44,7 @@ class DocumentProcessor:
         content_type = file.content_type
         if content_type:
             for format_type in DocumentFormat:
-                if content_type == format_type.value:
+                if content_type == format_type.value and format_type != DocumentFormat.UNKNOWN:
                     return format_type
         
         # Fall back to file extension
@@ -272,7 +272,8 @@ class DocumentProcessor:
         Raises:
             DocumentProcessingError: If there's an error extracting text
         """
-        start_time = logger.time.time()
+        import time
+        start_time = time.time()
         logger.info(f"Starting text extraction from document")
         
         try:
@@ -323,7 +324,8 @@ class DocumentProcessor:
             else:
                 raise ValueError(f"Unsupported document format: {format_type}")
             
-            elapsed_time = logger.time.time() - start_time
+            import time
+            elapsed_time = time.time() - start_time
             logger.info(f"Text extraction completed in {elapsed_time:.2f} seconds")
             
             return text

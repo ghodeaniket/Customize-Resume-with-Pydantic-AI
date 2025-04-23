@@ -150,7 +150,8 @@ class InMemoryCacheProvider(CacheProvider):
         """
         # Check if key exists and is not expired
         if key in self._cache:
-            if key in self._expiry and self._expiry[key] < logger.time.time():
+            import time
+            if key in self._expiry and self._expiry[key] < time.time():
                 # Key has expired
                 del self._cache[key]
                 del self._expiry[key]
@@ -171,7 +172,8 @@ class InMemoryCacheProvider(CacheProvider):
         self._cache[key] = value
         
         if ttl is not None:
-            self._expiry[key] = logger.time.time() + ttl
+            import time
+            self._expiry[key] = time.time() + ttl
     
     async def delete(self, key: str) -> None:
         """Delete a cached value by key.

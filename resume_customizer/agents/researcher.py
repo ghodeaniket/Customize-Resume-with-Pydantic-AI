@@ -52,7 +52,7 @@ clear direction on how to tailor their application for maximum impact.
 
 # Initialize the Researcher agent
 researcher_agent = Agent(
-    'openrouter',
+    'openai:gpt-4',  # Using OpenAI as a fallback instead of OpenRouter
     deps_type=ResumeCustomizerDeps,
     output_type=JobRequirements,
     system_prompt=RESEARCHER_SYSTEM_PROMPT,

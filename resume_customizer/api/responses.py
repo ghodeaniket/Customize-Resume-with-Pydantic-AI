@@ -36,6 +36,21 @@ class HealthCheckResponse(BaseModel):
     version: str = Field(..., description="API version")
 
 
+class PerformanceResponse(BaseModel):
+    """Response model for performance metrics.
+    
+    Attributes:
+        elapsed_time: The elapsed time in seconds
+        timestamp: The timestamp of the request
+        operation: The operation being performed
+        cache_hit: Whether the result was retrieved from cache
+    """
+    elapsed_time: float = Field(..., description="The elapsed time in seconds")
+    timestamp: float = Field(..., description="The timestamp of the request")
+    operation: str = Field(..., description="The operation being performed")
+    cache_hit: bool = Field(False, description="Whether the result was retrieved from cache")
+
+
 class ProfileResponse(BaseModel):
     """Response model for resume profile analysis.
     
@@ -73,21 +88,6 @@ class UploadResponse(BaseModel):
     file_type: str = Field(..., description="The MIME type of the file")
     file_size: int = Field(..., description="The size of the file in bytes")
     extract_count: Optional[int] = Field(None, description="The number of characters extracted from the file")
-
-
-class PerformanceResponse(BaseModel):
-    """Response model for performance metrics.
-    
-    Attributes:
-        elapsed_time: The elapsed time in seconds
-        timestamp: The timestamp of the request
-        operation: The operation being performed
-        cache_hit: Whether the result was retrieved from cache
-    """
-    elapsed_time: float = Field(..., description="The elapsed time in seconds")
-    timestamp: float = Field(..., description="The timestamp of the request")
-    operation: str = Field(..., description="The operation being performed")
-    cache_hit: bool = Field(False, description="Whether the result was retrieved from cache")
 
 
 class ResumeCustomizationResponse(BaseModel):

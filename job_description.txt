@@ -1,0 +1,28 @@
+Senior Engineering Manager - Python
+
+About the Role:
+We are looking for a Senior Engineering Manager to lead our backend development team. In this role, you will be responsible for managing a team of 8-10 engineers working on our Python-based microservices architecture. You will work closely with product managers, designers, and other engineering teams to build scalable and maintainable systems.
+
+Requirements:
+- 10+ years of experience in software engineering with at least a 5+ years in engineering management
+- Strong proficiency in Python and backend technologies
+- Experience with microservices architecture and RESTful API design
+- Solid understanding of database systems (SQL and NoSQL)
+- Expertise in cloud platforms (AWS, Azure, or GCP)
+- Experience with CI/CD pipelines and DevOps practices
+- Strong leadership skills with a track record of mentoring and developing engineers
+- Excellent communication and collaboration abilities
+- Bachelor's degree in Computer Science or related field
+
+Nice to Have:
+- Experience with React or other frontend technologies
+- Knowledge of machine learning and data processing
+- Familiarity with agile methodologies and JIRA
+- Experience with performance optimization and scaling systems
+- Open-source contributions
+
+What We Offer:
+- Competitive salary and benefits
+- Remote-first work environment
+- Professional development opportunities
+- Collaborative and innovative team culture

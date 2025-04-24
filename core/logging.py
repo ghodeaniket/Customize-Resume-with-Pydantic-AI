@@ -1,5 +1,6 @@
 """Logging configuration for Resume Customizer."""
 import logging
+import os
 import sys
 from typing import Any, Dict, Optional
 
@@ -20,18 +21,50 @@ def configure_logging() -> None:
     settings = get_settings()
     
     # Get log level from settings
-    log_level = LOG_LEVELS.get(settings.log_level.upper(), logging.INFO)
+    log_level_str = settings.log_level.upper()
+    log_level = LOG_LEVELS.get(log_level_str, logging.INFO)
+    
+    # Create logs directory if it doesn't exist
+    logs_dir = os.path.join(os.getcwd(), 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    
+    # Create file handler for logging to file
+    file_handler = logging.FileHandler(os.path.join(logs_dir, 'app.log'))
+    file_handler.setLevel(log_level)
+    
+    # Create console handler for logging to stdout
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    
+    # Create formatters
+    file_formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)s:%(filename)s:%(lineno)d | %(message)s')
+    console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    
+    file_handler.setFormatter(file_formatter)
+    console_handler.setFormatter(console_formatter)
     
     # Configure root logger
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
     
-    # Set specific loggers to desired levels
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("uvicorn").setLevel(logging.WARNING)
+    # Remove existing handlers to avoid duplicates
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    # Add handlers to root logger
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # Configure specific loggers
+    for logger_name, logger_level in [
+        ('httpx', logging.WARNING),
+        ('uvicorn', logging.WARNING),
+        ('PyPDF2', logging.WARNING),
+    ]:
+        logging.getLogger(logger_name).setLevel(logger_level)
+    
+    # Log configuration info
+    logging.info(f"Logging configured with level: {log_level_str}")
     
 
 class LoggerMixin:
@@ -72,3 +105,12 @@ class LoggerMixin:
             extra: Optional extra information to include in log
         """
         self.logger.debug(message, extra=extra)
+    
+    def log_warning(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log warning message.
+        
+        Args:
+            message: Message to log
+            extra: Optional extra information to include in log
+        """
+        self.logger.warning(message, extra=extra)

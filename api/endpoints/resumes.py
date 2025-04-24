@@ -55,6 +55,7 @@ async def customize_resume(
             detail={"message": e.message, "details": e.details}
         )
     except Exception as e:
+        logger.error(f"Error in customize_resume: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": f"Error customizing resume: {str(e)}"}
@@ -103,15 +104,9 @@ async def customize_resume_upload(
         file_content = await resume_file.read()
         logger.info(f"File size: {len(file_content)} bytes")
         
-        # Try to decode the first few bytes to see if it's text
-        try:
-            sample = file_content[:100].decode('utf-8')
-            logger.info(f"First 100 chars: {sample}")
-        except:
-            logger.info("File is not UTF-8 text")
+        # Determine file type based on the filename extension
+        file_type = resume_file.content_type or "application/octet-stream"  # Default
         
-        # Use the correct file type based on the filename extension
-        file_type = "text/plain"  # Default
         if resume_file.filename:
             if resume_file.filename.lower().endswith(".pdf"):
                 file_type = "application/pdf"
@@ -120,41 +115,50 @@ async def customize_resume_upload(
             elif resume_file.filename.lower().endswith(".txt"):
                 file_type = "text/plain"
         
-        logger.info(f"Determined file type: {file_type}")
+        logger.info(f"Using file type: {file_type}")
+        
+        # Check for PDF magic number (header signature)
+        if file_content[:4] == b'%PDF':
+            logger.info("PDF header signature detected - overriding content type")
+            file_type = "application/pdf"
         
         # Apply default token limit if not specified
         if max_tokens is None:
             max_tokens = settings.default_token_limit
         
-        # Process request with direct text content for text files
+        # For plain text files, extract content directly
         if file_type == "text/plain":
-            # For plain text files, we'll just decode the content directly
-            resume_content = file_content.decode('utf-8').strip()
-            logger.info(f"Decoded text file content: {resume_content}")
-            
-            # Create a customization request directly
-            request = CustomizationRequest(
-                resume_content=resume_content,
-                job_description=job_description,
-                model_name=model_name,
-                output_format=output_format,
-                max_tokens=max_tokens
-            )
-            
-            # Process the request directly
-            return await service.customize_resume(request)
-        else:
-            # For other file types, use the service's file processing
-            response = await service.customize_resume_from_file(
-                file_content=file_content,
-                file_type=file_type,
-                job_description=job_description,
-                model_name=model_name,
-                output_format=output_format,
-                max_tokens=max_tokens
-            )
-            
-            return response
+            try:
+                resume_content = file_content.decode('utf-8').strip()
+                logger.info(f"Extracted text content (first 100 chars): {resume_content[:100]}")
+                
+                # Create a customization request
+                request = CustomizationRequest(
+                    resume_content=resume_content,
+                    job_description=job_description,
+                    model_name=model_name,
+                    output_format=output_format,
+                    max_tokens=max_tokens
+                )
+                
+                # Process the request
+                return await service.customize_resume(request)
+            except UnicodeDecodeError:
+                logger.warning("Failed to decode as text, trying binary processing")
+                file_type = "application/octet-stream"
+        
+        # For all other file types, use the file processing service
+        logger.info(f"Processing file as {file_type}")
+        response = await service.customize_resume_from_file(
+            file_content=file_content,
+            file_type=file_type,
+            job_description=job_description,
+            model_name=model_name,
+            output_format=output_format,
+            max_tokens=max_tokens
+        )
+        
+        return response
         
     except ResumeCustomizerError as e:
         logger.error(f"Resume customizer error: {e.message}", exc_info=True)
@@ -163,7 +167,7 @@ async def customize_resume_upload(
             detail={"message": e.message, "details": e.details}
         )
     except Exception as e:
-        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error in customize_resume_upload: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": f"Error customizing resume: {str(e)}"}
@@ -185,6 +189,11 @@ async def upload_test(
     """
     content = await file.read()
     text_content = None
+    file_type = file.content_type or "unknown"
+    
+    # Check for PDF signature
+    if content[:4] == b'%PDF':
+        file_type = "application/pdf (detected from signature)"
     
     try:
         text_content = content.decode('utf-8')
@@ -194,6 +203,7 @@ async def upload_test(
     return {
         "filename": file.filename,
         "content_type": file.content_type,
+        "detected_type": file_type,
         "size": len(content),
         "content_sample": text_content[:100] if text_content else None,
         "headers": dict(file.headers)

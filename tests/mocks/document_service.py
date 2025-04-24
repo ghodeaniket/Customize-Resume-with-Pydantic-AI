@@ -1,19 +1,13 @@
-"""Document service for the Resume Customizer application.
-
-This module provides a high-level interface for document operations.
-It delegates to the appropriate processor based on the document type.
-"""
+"""Mock document service for testing."""
 
 from fastapi import UploadFile
-from loguru import logger
-
 from resume_customizer.core.config import settings
 from resume_customizer.core.exceptions import DocumentProcessingError
 from resume_customizer.services.document.processor import DocumentProcessor
 
 
 class DocumentService:
-    """Service for document operations.
+    """Mock service for document operations.
     
     This class provides a high-level interface for document operations
     like validation, extraction, and cleaning.

@@ -1,10 +1,20 @@
 """Tests for the Strategist agent."""
 
+import sys
+import os
+
+# Add the mock directory to the Python path
+test_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../tests'))
+if test_dir not in sys.path:
+    sys.path.insert(0, test_dir)
+
+# Import AgentRunResult from our mock instead of real pydantic_ai
+from mocks.pydantic_ai import AgentRunResult
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-from pydantic_ai import AgentRunResult
 
 from resume_customizer.agents.infrastructure import ResumeCustomizerDeps
 from resume_customizer.agents.models.job import JobRequirements

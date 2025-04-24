@@ -58,8 +58,8 @@ class StrategistAgent(LoggerMixin):
             return await self.researcher_agent.analyze_job_description(
                 job_description,
                 deps=ctx.deps,
-                usage=ctx.usage,
-                usage_limits=ctx.usage_limits
+                usage=ctx.usage if hasattr(ctx, 'usage') else None,
+                usage_limits=ctx.usage_limits if hasattr(ctx, 'usage_limits') else None
             )
         
         # Tool for getting resume insights from Profiler agent
@@ -73,8 +73,8 @@ class StrategistAgent(LoggerMixin):
             return await self.profiler_agent.analyze_resume(
                 resume_content,
                 deps=ctx.deps,
-                usage=ctx.usage,
-                usage_limits=ctx.usage_limits
+                usage=ctx.usage if hasattr(ctx, 'usage') else None,
+                usage_limits=ctx.usage_limits if hasattr(ctx, 'usage_limits') else None
             )
     
     def _get_system_prompt(self) -> str:

@@ -118,10 +118,21 @@ class ResumeCustomizerService(LoggerMixin):
         """
         self.log_info(f"Processing resume customization from file of type {file_type}")
         
-        # Extract text from file
-        resume_content = await self.document_processor.extract_text_from_bytes(
-            file_content, file_type
-        )
+        # For testing - directly use the file content as text if it's a plain text file
+        if file_type == "text/plain":
+            try:
+                resume_content = file_content.decode('utf-8')
+                self.log_debug(f"Decoded text file: {resume_content[:50]}...")
+            except UnicodeDecodeError:
+                self.log_error("Failed to decode text file, trying to extract text")
+                resume_content = await self.document_processor.extract_text_from_bytes(
+                    file_content, file_type
+                )
+        else:
+            # Extract text from file
+            resume_content = await self.document_processor.extract_text_from_bytes(
+                file_content, file_type
+            )
         
         # Create request
         request = CustomizationRequest(

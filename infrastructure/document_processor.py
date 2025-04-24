@@ -35,6 +35,8 @@ class DocumentProcessor(LoggerMixin):
             DocumentProcessingError: If file type is unsupported or extraction fails
         """
         try:
+            self.log_debug(f"Extracting text from file of type: {file_type}")
+            
             if file_type == "application/pdf":
                 return self._extract_from_pdf(file_content)
             
@@ -42,6 +44,7 @@ class DocumentProcessor(LoggerMixin):
                 return self._extract_from_docx(file_content)
             
             elif file_type == "text/plain":
+                # For text files, just decode the bytes to string
                 return file_content.decode('utf-8')
             
             else:

@@ -140,7 +140,7 @@ async def extract_resume_from_file(
     Raises:
         DocumentProcessingError: If there's an error extracting text
     """
-    from resume_customizer.services.document.processor import DocumentFormat
+    from resume_customizer.services.document.processor import DocumentFormat, DocumentProcessor
     
     start_time = time.time()
     logger.info(f"Extracting text from resume file ({len(file_content)} bytes, type: {file_type})")
@@ -246,11 +246,11 @@ async def analyze_resume(
             file_content = await resume_content.read()
             await resume_content.seek(0)  # Reset file position
             
-            text_content = await extract_resume_from_file(
-                ctx=RunContext(deps=deps),
-                file_content=file_content,
-                file_type=resume_content.content_type or "application/octet-stream",
-                filename=resume_content.filename
+            from resume_customizer.services.document.processor import DocumentProcessor
+            
+            # Extract text directly using the DocumentProcessor
+            text_content = await DocumentProcessor.extract_text(
+                file=resume_content
             )
         
         elif isinstance(resume_content, Path):

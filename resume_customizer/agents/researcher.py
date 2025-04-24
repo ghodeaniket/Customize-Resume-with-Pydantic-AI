@@ -130,7 +130,7 @@ async def analyze_job_description(
     """Analyze a job description and extract key requirements.
     
     Args:
-        job_description: The job description content
+        job_description: The job description content or URL
         http_client: The HTTP client for making requests
         model_name: Optional override for the model name
         
@@ -150,11 +150,35 @@ async def analyze_job_description(
             model_name=model_name or settings.DEFAULT_MODEL
         )
         
+        # Check if job_description is a URL
+        import re
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain...
+            r'localhost|'  # localhost...
+            r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # ...or ip
+            r'(?::\d+)?'  # optional port
+            r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+        
+        job_description_text = job_description
+        if url_pattern.match(job_description):
+            # It's a URL, fetch the content
+            logger.info(f"Job description appears to be a URL, fetching content: {job_description}")
+            try:
+                job_description_text = await fetch_job_description(
+                    ctx=RunContext(deps=deps),
+                    url=job_description
+                )
+            except Exception as e:
+                logger.warning(f"Failed to fetch job description from URL: {str(e)}")
+                # Continue with the original text, assuming it's not actually a URL
+                job_description_text = job_description
+        
         # Prepare the prompt
         prompt = (
             f"Analyze the following job description thoroughly and extract key requirements "
-            f"and insights:\n\n{job_description[:2000]}..."
-            if len(job_description) > 2000 else job_description
+            f"and insights:\n\n{job_description_text[:2000]}..."
+            if len(job_description_text) > 2000 else job_description_text
         )
         
         # Run the agent

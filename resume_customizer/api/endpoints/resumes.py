@@ -150,11 +150,25 @@ async def upload_resume(
         )
         
     except DocumentProcessingError as e:
-        logger.error(f"Document processing error: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to process file: {str(e)}"
-        )
+        error_msg = f"Document processing error: {str(e)}"
+        logger.error(error_msg)
+        
+        # Provide more specific error messages based on the exception
+        if "Could not decode" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"File format error: The file could not be processed. Please check that it's a valid {e.document_type} file."
+            )
+        elif "empty" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Empty content: The file appears to be empty or contains no extractable text."
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Failed to process file: {str(e)}"
+            )
         
     except ResumeCustomizerException as e:
         logger.error(f"Application error: {str(e)}")

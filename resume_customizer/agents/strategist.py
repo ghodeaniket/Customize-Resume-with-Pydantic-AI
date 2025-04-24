@@ -175,16 +175,39 @@ async def customize_resume(
         
         # Extract text if resume_content is not a string
         if not isinstance(resume_content, str):
-            resume_text = await analyze_resume(
-                resume_content=resume_content,
-                http_client=http_client,
-                model_name=model_name,
-                file_type=file_type
-            )
-            # Use the professional profile from analyze_resume, but we need the raw text
-            # For demonstration purposes, we'll use a placeholder approach here
-            # In a real implementation, this would need to be handled more carefully
-            resume_text_content = str(resume_text)
+            # If it's an UploadFile, extract the text directly
+            if isinstance(resume_content, UploadFile):
+                from resume_customizer.services.document.processor import DocumentProcessor
+                resume_text_content = await DocumentProcessor.extract_text(resume_content)
+            else:
+                # For other types (bytes, Path), use analyze_resume
+                resume_profile = await analyze_resume(
+                    resume_content=resume_content,
+                    http_client=http_client,
+                    model_name=model_name,
+                    file_type=file_type
+                )
+                
+                # Get the original text through a secondary extraction
+                if isinstance(resume_content, bytes):
+                    from resume_customizer.services.document.processor import DocumentProcessor, DocumentFormat
+                    format_type = None
+                    if file_type == "application/pdf":
+                        format_type = DocumentFormat.PDF
+                    elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                        format_type = DocumentFormat.DOCX
+                    elif file_type == "text/plain":
+                        format_type = DocumentFormat.TXT
+                    else:
+                        format_type = DocumentFormat.TXT
+                    
+                    resume_text_content = await DocumentProcessor.extract_text(resume_content, format_type)
+                elif isinstance(resume_content, Path):
+                    with open(resume_content, 'r', encoding='utf-8') as f:
+                        resume_text_content = f.read()
+                else:
+                    # Fallback if we can't get original text
+                    resume_text_content = str(resume_profile)
         else:
             resume_text_content = resume_content
         

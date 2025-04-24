@@ -68,3 +68,12 @@ class Settings(BaseSettings):
 
 # Instantiate settings
 settings = Settings()
+
+# Export environment variables for subprocess and library access
+# This ensures libraries like OpenAI can access API keys directly
+import os
+if settings.OPENAI_API_KEY:
+    os.environ['OPENAI_API_KEY'] = settings.OPENAI_API_KEY
+
+if settings.OPENROUTER_API_KEY:
+    os.environ['OPENROUTER_API_KEY'] = settings.OPENROUTER_API_KEY

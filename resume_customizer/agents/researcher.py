@@ -16,46 +16,15 @@ from resume_customizer.agents.infrastructure import ResumeCustomizerDeps
 from resume_customizer.agents.models.job import JobRequirements
 from resume_customizer.core.config import settings
 from resume_customizer.core.exceptions import AgentError, DocumentProcessingError
+from resume_customizer.core.prompts import get_researcher_prompt
 
 
-# Define the system prompt for the Researcher Agent
-RESEARCHER_SYSTEM_PROMPT = """
-You are Eliza Chen, a Tech Job Description Strategist with 13+ years of experience 
-in technical recruitment and talent acquisition at FAANG companies.
-
-Your expertise is in deeply analyzing job descriptions to extract the real requirements, 
-hidden expectations, and strategic insights that help candidates optimize their 
-applications for specific roles.
-
-### TASK:
-1. Analyze the provided job description thoroughly.
-2. Extract key requirements and insights including:
-   - Company context and position details
-   - Core requirements (must-have skills and qualifications)
-   - Supplementary attributes (nice-to-have skills and qualities)
-   - Hidden expectations (reading between the lines)
-   - Application strategy (areas to emphasize and address)
-   - Keywords for ATS optimization
-
-### GUIDELINES:
-- Distinguish between essential requirements and nice-to-haves
-- Look beyond explicit statements to identify implicit expectations
-- Identify technical skills, soft skills, and experience levels required
-- Note company culture indicators and how they affect requirements
-- Extract specific terminology that would help with ATS optimization
-- Provide strategic advice on how to position oneself for this role
-
-Your analysis should be structured, insightful, and actionable, giving candidates 
-clear direction on how to tailor their application for maximum impact.
-"""
-
-
-# Initialize the Researcher agent
+# Initialize the Researcher agent with prompt from prompt management system
 researcher_agent = Agent(
     'openai:gpt-4',  # Using OpenAI as a fallback instead of OpenRouter
     deps_type=ResumeCustomizerDeps,
     output_type=JobRequirements,
-    system_prompt=RESEARCHER_SYSTEM_PROMPT,
+    system_prompt=get_researcher_prompt(),
 )
 
 
@@ -63,13 +32,35 @@ researcher_agent = Agent(
 async def set_researcher_model(ctx: RunContext[ResumeCustomizerDeps]) -> str:
     """Set the specific model to use via dynamic system prompt.
     
+    This also handles retrieving the latest prompt version from the prompt
+    management system, including potential A/B testing variants.
+    
     Args:
         ctx: The run context containing dependencies
         
     Returns:
-        str: A system prompt fragment specifying the model to use
+        str: The complete system prompt for the researcher agent
     """
-    return f"You will be using the {ctx.deps.model_name} model to analyze job descriptions."
+    # Get the model specification part
+    model_spec = f"You will be using the {ctx.deps.model_name} model to analyze job descriptions."
+    
+    # Check if we should use A/B testing - set via context metadata
+    use_ab_testing = ctx.metadata.get("use_ab_testing", False) if ctx.metadata else False
+    prompt_version = ctx.metadata.get("prompt_version", None) if ctx.metadata else None
+    
+    # Get the appropriate prompt from the prompt management system
+    prompt = get_researcher_prompt(version=prompt_version, ab_test=use_ab_testing)
+    
+    # Logging which prompt version is being used for traceability
+    if prompt_version:
+        logger.info(f"Using researcher prompt version {prompt_version}")
+    elif use_ab_testing:
+        logger.info("Using A/B test selection for researcher prompt")
+    else:
+        logger.info("Using default active researcher prompt")
+    
+    # Combine the model specification with the prompt template
+    return f"{prompt}\n\n{model_spec}"
 
 
 @researcher_agent.tool
@@ -125,7 +116,10 @@ async def fetch_job_description(
 async def analyze_job_description(
     job_description: str,
     http_client: httpx.AsyncClient,
-    model_name: Optional[str] = None
+    model_name: Optional[str] = None,
+    prompt_version: Optional[str] = None,
+    use_ab_testing: bool = False,
+    track_metrics: bool = True
 ) -> JobRequirements:
     """Analyze a job description and extract key requirements.
     
@@ -133,6 +127,9 @@ async def analyze_job_description(
         job_description: The job description content or URL
         http_client: The HTTP client for making requests
         model_name: Optional override for the model name
+        prompt_version: Optional specific prompt version to use
+        use_ab_testing: Whether to use A/B testing for prompt selection
+        track_metrics: Whether to track metrics for this run
         
     Returns:
         JobRequirements: The extracted job requirements
@@ -181,15 +178,52 @@ async def analyze_job_description(
             if len(job_description_text) > 2000 else job_description_text
         )
         
-        # Run the agent
+        # Set up metadata for prompt management
+        metadata = {
+            "prompt_version": prompt_version,
+            "use_ab_testing": use_ab_testing,
+            "track_metrics": track_metrics,
+            "content_length": len(job_description_text)
+        }
+        
+        # Run the agent with metadata for prompt selection
         result = await researcher_agent.run(
             prompt,
-            deps=deps
+            deps=deps,
+            metadata=metadata
         )
         
         # Log the result
         elapsed_time = time.time() - start_time
         logger.info(f"Job description analysis completed in {elapsed_time:.2f} seconds")
+        
+        # Track metrics if enabled
+        if track_metrics:
+            from resume_customizer.core.metrics import track_agent_metrics
+            from resume_customizer.core.prompts.manager import prompt_manager
+            
+            # Determine which prompt version was used
+            actual_version = prompt_version
+            if use_ab_testing:
+                # Need to retrieve the version that was selected by A/B testing
+                # For now, we'll use the active version as a fallback
+                actual_version = prompt_manager.active_versions.get("researcher", "1.0.0")
+            
+            # Track basic performance metrics
+            metrics = {
+                "execution_time": elapsed_time,
+                "keywords_extracted": len(result.output.keywords),
+                "core_requirements_extracted": len(result.output.core_requirements),
+                "token_count": result.usage.total_tokens if hasattr(result, "usage") else 0,
+            }
+            
+            # Record metrics with the prompt manager
+            try:
+                prompt_manager.record_metrics("researcher", actual_version, metrics)
+                track_agent_metrics("researcher", metrics)
+                logger.debug(f"Recorded metrics for researcher agent v{actual_version}: {metrics}")
+            except Exception as e:
+                logger.warning(f"Failed to record metrics: {str(e)}")
         
         return result.output
         

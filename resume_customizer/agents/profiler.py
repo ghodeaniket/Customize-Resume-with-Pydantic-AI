@@ -19,50 +19,17 @@ from resume_customizer.agents.infrastructure import ResumeCustomizerDeps
 from resume_customizer.agents.models.profile import ProfessionalProfile
 from resume_customizer.core.config import settings
 from resume_customizer.core.exceptions import AgentError, DocumentProcessingError
+from resume_customizer.core.prompts import get_profiler_prompt
 from resume_customizer.services.cache import get_cache_provider
 from resume_customizer.services.document import DocumentProcessor
 
 
-# Define the system prompt for the Profiler Agent
-PROFILER_SYSTEM_PROMPT = """
-You are Dr. Maya Kaplan, a Career Intelligence Specialist with a Ph.D. in 
-Industrial-Organizational Psychology and 12 years of experience in talent 
-acquisition analytics at Fortune 500 companies.
-
-Your expertise is in deeply analyzing resumes to extract comprehensive professional
-profiles that reveal a candidate's unique value proposition, demonstrating patterns,
-and career trajectory.
-
-### TASK:
-1. Analyze the provided resume thoroughly.
-2. Extract a comprehensive professional profile including:
-   - Core identity/unique value proposition
-   - Technical skills with evidence of application
-   - Soft skills with evidence of application  
-   - Project experiences with impact metrics
-   - Contribution patterns (how they create value)
-   - Professional interests/motivations
-   - Work style/communication preferences
-
-### GUIDELINES:
-- Maintain strict objectivity based only on resume content
-- Look for evidence and patterns, not just listed items
-- Identify the "why" behind career moves and choices
-- Extract both explicit and implicit professional traits
-- Focus on the candidate's unique differentiators
-- Provide specific examples from the resume to support your analysis
-
-Your analysis should be structured, evidence-based, and insightful, focusing on 
-what makes this professional unique rather than simply restating resume facts.
-"""
-
-
-# Initialize the Profiler agent
+# Initialize the Profiler agent with prompt from prompt management system
 profiler_agent = Agent(
     'openai:gpt-4',  # Using OpenAI as a fallback instead of OpenRouter
     deps_type=ResumeCustomizerDeps,
     output_type=ProfessionalProfile,
-    system_prompt=PROFILER_SYSTEM_PROMPT,
+    system_prompt=get_profiler_prompt(),
 )
 
 
@@ -70,13 +37,35 @@ profiler_agent = Agent(
 async def set_profiler_model(ctx: RunContext[ResumeCustomizerDeps]) -> str:
     """Set the specific model to use via dynamic system prompt.
     
+    This also handles retrieving the latest prompt version from the prompt
+    management system, including potential A/B testing variants.
+    
     Args:
         ctx: The run context containing dependencies
         
     Returns:
-        str: A system prompt fragment specifying the model to use
+        str: The complete system prompt for the profiler agent
     """
-    return f"You will be using the {ctx.deps.model_name} model to analyze resumes."
+    # Get the model specification part
+    model_spec = f"You will be using the {ctx.deps.model_name} model to analyze resumes."
+    
+    # Check if we should use A/B testing - set via context metadata
+    use_ab_testing = ctx.metadata.get("use_ab_testing", False) if ctx.metadata else False
+    prompt_version = ctx.metadata.get("prompt_version", None) if ctx.metadata else None
+    
+    # Get the appropriate prompt from the prompt management system
+    prompt = get_profiler_prompt(version=prompt_version, ab_test=use_ab_testing)
+    
+    # Logging which prompt version is being used for traceability
+    if prompt_version:
+        logger.info(f"Using profiler prompt version {prompt_version}")
+    elif use_ab_testing:
+        logger.info("Using A/B test selection for profiler prompt")
+    else:
+        logger.info("Using default active profiler prompt")
+    
+    # Combine the model specification with the prompt template
+    return f"{prompt}\n\n{model_spec}"
 
 
 # Initialize cache provider
@@ -186,7 +175,10 @@ async def analyze_resume(
     resume_content: Union[str, bytes, UploadFile, Path],
     http_client: httpx.AsyncClient,
     model_name: Optional[str] = None,
-    file_type: Optional[str] = None
+    file_type: Optional[str] = None,
+    prompt_version: Optional[str] = None,
+    use_ab_testing: bool = False,
+    track_metrics: bool = True
 ) -> ProfessionalProfile:
     """Analyze a resume and create a professional profile.
     
@@ -201,6 +193,9 @@ async def analyze_resume(
         http_client: The HTTP client for making requests
         model_name: Optional override for the model name
         file_type: MIME type (required if resume_content is bytes)
+        prompt_version: Optional specific prompt version to use
+        use_ab_testing: Whether to use A/B testing for prompt selection
+        track_metrics: Whether to track metrics for this run
         
     Returns:
         ProfessionalProfile: The extracted professional profile
@@ -270,15 +265,51 @@ async def analyze_resume(
             if len(text_content) > 5000 else text_content
         )
         
-        # Run the agent
+        # Set up metadata for prompt management
+        metadata = {
+            "prompt_version": prompt_version,
+            "use_ab_testing": use_ab_testing,
+            "track_metrics": track_metrics,
+            "content_length": len(text_content)
+        }
+        
+        # Run the agent with metadata for prompt selection
         result = await profiler_agent.run(
             prompt,
-            deps=deps
+            deps=deps,
+            metadata=metadata
         )
         
         # Log the result
         elapsed_time = time.time() - start_time
         logger.info(f"Resume analysis completed in {elapsed_time:.2f} seconds")
+        
+        # Track metrics if enabled
+        if track_metrics:
+            from resume_customizer.core.metrics import track_agent_metrics
+            from resume_customizer.core.prompts.manager import prompt_manager
+            
+            # Determine which prompt version was used
+            actual_version = prompt_version
+            if use_ab_testing:
+                # Need to retrieve the version that was selected by A/B testing
+                # For now, we'll use the active version as a fallback
+                actual_version = prompt_manager.active_versions.get("profiler", "1.0.0")
+            
+            # Track basic performance metrics
+            metrics = {
+                "execution_time": elapsed_time,
+                "fields_extracted": len(result.output.model_dump()),
+                "token_count": result.usage.total_tokens if hasattr(result, "usage") else 0,
+            }
+            
+            # Record metrics with the prompt manager
+            try:
+                prompt_manager.record_metrics("profiler", actual_version, metrics)
+                track_agent_metrics("profiler", metrics)
+                logger.debug(f"Recorded metrics for profiler agent v{actual_version}: {metrics}")
+            except Exception as e:
+                logger.warning(f"Failed to record metrics: {str(e)}")
         
         return result.output
         

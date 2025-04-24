@@ -57,6 +57,25 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     ENABLE_PERFORMANCE_LOGGING: bool = True
     
+    # Prompt Management
+    ENABLE_PROMPT_AB_TESTING: bool = False  # Whether to enable A/B testing of prompts
+    PROMPT_TEMPLATES_PATH: Optional[str] = None  # Path to external prompt templates
+    
+    # Error Handling
+    MAX_RETRY_ATTEMPTS: int = 3  # Maximum number of retry attempts for failed operations
+    ENABLE_MODEL_FALLBACKS: bool = True  # Whether to enable fallbacks to different models
+    FALLBACK_MODEL_ORDER: List[str] = [
+        "deepseek/deepseek-r1-mistral-7b",
+        "openai:gpt-4-turbo",
+        "openai:gpt-3.5-turbo",
+        "claude-3-5-sonnet",
+    ]
+    
+    # Metrics and Evaluation
+    METRICS_RETENTION_DAYS: int = 30  # How long to retain metrics data
+    EVALUATION_SCORE_THRESHOLD: float = 0.7  # Minimum acceptable score for agent outputs
+    METRICS_SNAPSHOT_INTERVAL: int = 300  # Interval in seconds for system metrics snapshots
+    
     class Config:
         """Pydantic configuration for Settings."""
         case_sensitive = True

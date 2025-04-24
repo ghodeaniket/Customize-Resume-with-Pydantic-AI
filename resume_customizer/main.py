@@ -14,10 +14,13 @@ from resume_customizer.api.endpoints.health import router as health_router
 from resume_customizer.api.endpoints.metrics import router as metrics_router
 from resume_customizer.api.endpoints.resumes import router as resumes_router
 from resume_customizer.api.endpoints.tasks import router as tasks_router
+from resume_customizer.api.endpoints.feedback import router as feedback_router
 from resume_customizer.api.middleware import add_middleware
 from resume_customizer.core.config import settings
 from resume_customizer.core.exceptions import ResumeCustomizerException
 from resume_customizer.core.logging import app_logger as logger, setup_logging
+from resume_customizer.core.middleware import setup_middleware
+from resume_customizer.core.prompts.registry import setup_ab_testing
 
 
 @asynccontextmanager
@@ -34,6 +37,22 @@ async def lifespan(app: FastAPI):
     
     # Store API key in app state
     app.state.openrouter_api_key = settings.OPENROUTER_API_KEY
+    
+    # Set up prompt A/B testing if configured
+    if settings.ENABLE_PROMPT_AB_TESTING:
+        # Example configuration - this could come from a database or config file
+        ab_test_config = {
+            "profiler": {"1.0.0": 0.3, "1.1.0": 0.7},
+            "researcher": {"1.0.0": 0.2, "1.1.0": 0.8},
+            "strategist": {"1.0.0": 0.2, "1.1.0": 0.8},
+        }
+        setup_ab_testing(ab_test_config)
+        logger.info("Initialized prompt A/B testing")
+    
+    # Initialize system metrics collection
+    from resume_customizer.core.metrics.collector import track_system_metrics
+    track_system_metrics()
+    logger.info("Initialized system metrics collection")
     
     # Yield control to the application
     yield
@@ -58,14 +77,23 @@ app = FastAPI(
     * **Multi-format Processing**: Support for PDF, DOCX, and TXT files
     * **Background Processing**: Handle large files asynchronously
     * **Performance Monitoring**: Track API usage and performance
+    * **User Feedback Collection**: Gather and analyze feedback on output quality
+    * **Metrics Dashboard**: Visualize agent performance and system metrics
+    * **Prompt Management**: Versioned prompt templates with A/B testing
+    * **Error Recovery**: Robust error handling with fallback strategies
     
     ## Authentication
     
     All endpoints require an API key in the `X-API-Key` header.
+    Admin endpoints additionally require Basic authentication.
     
     ## File Upload
     
     File uploads are limited to {max_upload}MB and must be PDF, DOCX, or TXT format.
+    
+    ## Metrics and Monitoring
+    
+    Access the metrics dashboard at `/api/v1/metrics/dashboard` (admin access required).
     """.format(max_upload=settings.MAX_UPLOAD_SIZE/1024/1024),
     version=__version__,
     lifespan=lifespan,
@@ -91,6 +119,7 @@ app.add_middleware(
 
 # Add custom middleware
 add_middleware(app)
+setup_middleware(app)
 
 
 # Exception handler
@@ -115,8 +144,9 @@ async def resume_customizer_exception_handler(request: Request, exc: ResumeCusto
 # Include routers
 app.include_router(resumes_router, prefix=settings.API_V1_PREFIX)
 app.include_router(health_router)
-app.include_router(metrics_router, prefix=settings.API_V1_PREFIX)
+app.include_router(metrics_router, prefix=settings.API_V1_PREFIX + "/metrics")
 app.include_router(tasks_router, prefix=settings.API_V1_PREFIX)
+app.include_router(feedback_router, prefix=settings.API_V1_PREFIX + "/feedback")
 
 
 # Root endpoint

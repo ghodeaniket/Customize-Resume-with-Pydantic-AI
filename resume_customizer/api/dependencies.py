@@ -3,10 +3,10 @@
 This module contains FastAPI dependencies used across the API.
 """
 
-from typing import Generator
+from typing import Dict, Generator, Optional
 
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import APIKeyHeader
 
 from resume_customizer.core.config import settings
@@ -96,3 +96,87 @@ async def get_http_client() -> Generator[httpx.AsyncClient, None, None]:
     async with httpx.AsyncClient() as client:
         logger.debug("Created new HTTP client")
         yield client
+
+
+# Dictionary to store admin credentials in memory (replace with a database in production)
+# For development only - this would be replaced with a proper database in production
+_admin_users = {}
+
+# In development, initialize with the admin username/password from settings
+if settings.DEBUG:
+    # Default admin user for development
+    admin_username = "admin"
+    # In production, this would be securely hashed
+    admin_password = settings.SECRET_KEY[:16]  # Use part of SECRET_KEY as temp password in dev
+    _admin_users[admin_username] = {
+        "active": True,
+        "password": admin_password,
+        "role": "admin"
+    }
+    logger.warning(f"Using default admin credentials in development mode: {admin_username}:{admin_password}")
+
+
+async def get_admin_user(
+    authorization: Optional[str] = Header(None)
+) -> Dict:
+    """Verify admin credentials for access to protected endpoints.
+    
+    This dependency is used to restrict access to admin-only endpoints like
+    metrics and monitoring dashboards.
+    
+    Args:
+        authorization: The Authorization header (Basic auth)
+        
+    Returns:
+        Dict: The admin user details
+        
+    Raises:
+        HTTPException: If the credentials are invalid or missing
+    """
+    if not authorization:
+        logger.warning("Missing Authorization header for admin endpoint")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin credentials required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    # Simplified auth for MVP - in production, use proper Basic auth parsing
+    # This is just for development convenience
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "basic":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication method",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    try:
+        import base64
+        decoded = base64.b64decode(parts[1]).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials format",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    
+    # Check against stored users
+    if (username in _admin_users and
+        _admin_users[username].get("active", False) and
+        _admin_users[username].get("password") == password and
+        _admin_users[username].get("role") == "admin"):
+        
+        # Return user details without sensitive info
+        return {
+            "username": username,
+            "role": "admin"
+        }
+    
+    logger.warning(f"Invalid admin authentication attempt for user: {username}")
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid admin credentials",
+        headers={"WWW-Authenticate": "Basic"},
+    )

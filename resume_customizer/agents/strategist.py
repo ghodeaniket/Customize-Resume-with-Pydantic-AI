@@ -21,47 +21,17 @@ from resume_customizer.agents.profiler import analyze_resume
 from resume_customizer.agents.researcher import analyze_job_description
 from resume_customizer.core.config import settings
 from resume_customizer.core.exceptions import AgentError
+from resume_customizer.core.prompts import get_strategist_prompt
 from resume_customizer.services.cache import get_cache_provider
 from resume_customizer.services.document import DocumentProcessor
 
 
-# Define the system prompt for the Strategist Agent
-STRATEGIST_SYSTEM_PROMPT = """
-You are CareerPeak, a world-class resume strategist with 15+ years of experience 
-helping engineering leaders secure positions at top tech companies.
-
-Your expertise is in strategically customizing resumes to align perfectly with 
-specific job requirements while authentically representing the candidate's 
-professional identity and achievements.
-
-### TASK:
-1. Analyze the professional profile and job requirements provided.
-2. Create a tailored, ATS-optimized resume that:
-   - Positions the candidate's experience to match job requirements
-   - Highlights relevant achievements and impact metrics
-   - Incorporates key terminology from the job description
-   - Maintains the candidate's authentic professional identity
-   - Follows best practices for resume structure and content
-
-### GUIDELINES:
-- Focus on alignment between candidate strengths and job requirements
-- Prioritize quantifiable achievements and concrete examples
-- Ensure all key job requirements are addressed where the candidate has relevant experience
-- Use industry-standard terminology and ATS-friendly formatting
-- Create a coherent narrative that positions the candidate as an ideal fit
-- Maintain professional language and appropriate level of detail
-
-Your output should be a ready-to-use, strategically optimized resume in Markdown format,
-structured to pass ATS screening and impress human reviewers.
-"""
-
-
-# Initialize the Strategist agent
+# Initialize the Strategist agent with prompt from prompt management system
 strategist_agent = Agent(
     'openai:gpt-4',  # Using OpenAI as a fallback instead of OpenRouter
     deps_type=ResumeCustomizerDeps,
     output_type=str,  # Markdown formatted resume
-    system_prompt=STRATEGIST_SYSTEM_PROMPT,
+    system_prompt=get_strategist_prompt(), 
 )
 
 
@@ -69,13 +39,35 @@ strategist_agent = Agent(
 async def set_strategist_model(ctx: RunContext[ResumeCustomizerDeps]) -> str:
     """Set the specific model to use via dynamic system prompt.
     
+    This also handles retrieving the latest prompt version from the prompt
+    management system, including potential A/B testing variants.
+    
     Args:
         ctx: The run context containing dependencies
         
     Returns:
-        str: A system prompt fragment specifying the model to use
+        str: The complete system prompt for the strategist agent
     """
-    return f"You will be using the {ctx.deps.model_name} model to optimize resumes."
+    # Get the model specification part
+    model_spec = f"You will be using the {ctx.deps.model_name} model to optimize resumes."
+    
+    # Check if we should use A/B testing - set via context metadata
+    use_ab_testing = ctx.metadata.get("use_ab_testing", False) if ctx.metadata else False
+    prompt_version = ctx.metadata.get("prompt_version", None) if ctx.metadata else None
+    
+    # Get the appropriate prompt from the prompt management system
+    prompt = get_strategist_prompt(version=prompt_version, ab_test=use_ab_testing)
+    
+    # Logging which prompt version is being used for traceability
+    if prompt_version:
+        logger.info(f"Using strategist prompt version {prompt_version}")
+    elif use_ab_testing:
+        logger.info("Using A/B test selection for strategist prompt")
+    else:
+        logger.info("Using default active strategist prompt")
+    
+    # Combine the model specification with the prompt template
+    return f"{prompt}\n\n{model_spec}"
 
 
 @strategist_agent.tool
@@ -134,13 +126,23 @@ async def get_resume_insights(
 cache_provider = get_cache_provider()
 
 
+from resume_customizer.core.error_handling import with_retry, with_fallback
+from resume_customizer.core.evaluation import evaluate_agent_output
+
+
 @cache_provider.cached(prefix="resume_customization", ttl=settings.CACHE_TTL)
+@with_fallback(agent_name="strategist")
+@with_retry(max_retries=settings.MAX_RETRY_ATTEMPTS)
 async def customize_resume(
     resume_content: Union[str, bytes, UploadFile, Path],
     job_description: str,
     http_client: httpx.AsyncClient,
     model_name: Optional[str] = None,
-    file_type: Optional[str] = None
+    file_type: Optional[str] = None,
+    prompt_version: Optional[str] = None,
+    use_ab_testing: bool = False,
+    track_metrics: bool = True,
+    evaluate_output: bool = True
 ) -> OptimizedResume:
     """Customize a resume for a specific job description.
     
@@ -156,12 +158,16 @@ async def customize_resume(
         http_client: The HTTP client for making requests
         model_name: Optional override for the model name
         file_type: MIME type (required if resume_content is bytes)
+        prompt_version: Optional specific prompt version to use
+        use_ab_testing: Whether to use A/B testing for prompt selection
+        track_metrics: Whether to track metrics for this run
+        evaluate_output: Whether to evaluate the quality of the output
         
     Returns:
         OptimizedResume: The optimized resume
         
     Raises:
-        AgentError: If there's an error in agent execution
+        AgentError: If there's an error in agent execution and recovery fails
     """
     start_time = time.time()
     logger.info(f"Starting resume customization with model: {model_name or settings.DEFAULT_MODEL}")
@@ -220,10 +226,20 @@ async def customize_resume(
             f"highlighting the candidate's relevant skills and experiences."
         )
         
-        # Run the agent
+        # Set up metadata for prompt management
+        metadata = {
+            "prompt_version": prompt_version,
+            "use_ab_testing": use_ab_testing,
+            "track_metrics": track_metrics,
+            "job_description_length": len(job_description),
+            "resume_content_length": len(resume_text_content)
+        }
+        
+        # Run the agent with metadata for prompt selection
         result = await strategist_agent.run(
             prompt,
             deps=deps,
+            metadata=metadata,
             resume_content=resume_text_content,
             job_description=job_description
         )
@@ -269,6 +285,80 @@ async def customize_resume(
         # Log the result
         elapsed_time = time.time() - start_time
         logger.info(f"Resume customization completed in {elapsed_time:.2f} seconds")
+        
+        # Track metrics if enabled
+        if track_metrics:
+            from resume_customizer.core.metrics import track_agent_metrics
+            from resume_customizer.core.prompts.manager import prompt_manager
+            
+            # Determine which prompt version was used
+            actual_version = prompt_version
+            if use_ab_testing:
+                # Need to retrieve the version that was selected by A/B testing
+                # This would normally be tracked in the result metadata
+                # For now, we'll use the active version as a fallback
+                actual_version = prompt_manager.active_versions.get("strategist", "1.0.0")
+            
+            # Track basic performance metrics
+            metrics = {
+                "execution_time": elapsed_time,
+                "output_length": len(markdown_content),
+                "token_count": result.usage.total_tokens if hasattr(result, "usage") else 0,
+            }
+            
+            # Record metrics with the prompt manager
+            try:
+                prompt_manager.record_metrics("strategist", actual_version, metrics)
+                track_agent_metrics("strategist", metrics)
+                logger.debug(f"Recorded metrics for strategist agent v{actual_version}: {metrics}")
+            except Exception as e:
+                logger.warning(f"Failed to record metrics: {str(e)}")
+        
+        # Evaluate output quality if enabled
+        if evaluate_output:
+            try:
+                # Prepare evaluation metadata
+                eval_metadata = {
+                    "agent": "strategist",
+                    "prompt_version": actual_version if track_metrics else prompt_version,
+                    "model_name": model_name or settings.DEFAULT_MODEL,
+                    "execution_time": elapsed_time,
+                    "token_count": result.usage.total_tokens if hasattr(result, "usage") else 0,
+                    "resume_length": len(resume_text_content),
+                    "job_description_length": len(job_description),
+                    "output_length": len(markdown_content),
+                }
+                
+                # Evaluate the output
+                evaluation_result = await evaluate_agent_output(
+                    agent_name="strategist",
+                    output=markdown_content,
+                    prompt_version=actual_version if track_metrics else prompt_version or "unknown",
+                    metadata=eval_metadata
+                )
+                
+                # Log the evaluation result
+                logger.info(f"Strategist output evaluation: score={evaluation_result.overall_score:.2f}")
+                
+                # If quality is below threshold, log a warning
+                threshold = settings.EVALUATION_SCORE_THRESHOLD
+                if evaluation_result.overall_score < threshold:
+                    logger.warning(
+                        f"Strategist output quality below threshold: {evaluation_result.overall_score:.2f} < {threshold}"
+                    )
+                    
+                    # Add evaluation result to the output metadata for the client
+                    optimized_resume.metadata["quality_score"] = evaluation_result.overall_score
+                    optimized_resume.metadata["quality_threshold"] = threshold
+                    optimized_resume.metadata["quality_passed"] = False
+                else:
+                    # Add positive evaluation result
+                    optimized_resume.metadata["quality_score"] = evaluation_result.overall_score
+                    optimized_resume.metadata["quality_threshold"] = threshold
+                    optimized_resume.metadata["quality_passed"] = True
+                
+            except Exception as e:
+                logger.warning(f"Failed to evaluate strategist output: {str(e)}")
         
         return optimized_resume
         

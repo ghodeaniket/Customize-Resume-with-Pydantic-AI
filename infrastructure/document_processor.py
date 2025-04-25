@@ -3,6 +3,7 @@ import io
 import logging
 import re
 from typing import Dict, List, Optional, Tuple, Union
+import time as import_time
 
 import docx
 from PyPDF2 import PdfReader
@@ -200,9 +201,6 @@ class DocumentProcessor(LoggerMixin):
                 raise DocumentProcessingError("PDF file is incomplete or corrupted")
             else:
                 raise DocumentProcessingError(f"Error processing PDF: {str(e)}")
-
-# Import time at the module level to avoid import within function
-import time as import_time
     
     def _extract_from_docx(self, content: bytes) -> str:
         """Extract text from DOCX content.
@@ -213,23 +211,54 @@ import time as import_time
         Returns:
             str: Extracted text
         """
-        self.log_debug("Extracting text from DOCX")
-        logger.info(f"Extracting text from DOCX of size {len(content)} bytes")
+        start_time = import_time.time()
+        file_size = len(content)
+        
+        self.log_file_processing("docx_extraction_start", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", file_size)
         
         docx_file = io.BytesIO(content)
         try:
             doc = docx.Document(docx_file)
             
+            # Extract text from paragraphs
             paragraphs = [para.text for para in doc.paragraphs]
-            logger.info(f"Extracted {len(paragraphs)} paragraphs from DOCX")
+            self.log_debug(f"Extracted {len(paragraphs)} paragraphs from DOCX")
             
-            text = "\n".join(paragraphs)
+            # Extract text from tables if any
+            table_text = []
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = [cell.text for cell in row.cells]
+                    table_text.append(" | ".join(row_text))
+            
+            if table_text:
+                self.log_debug(f"Extracted text from {len(doc.tables)} tables")
+                
+            # Combine all text
+            all_text = paragraphs + table_text
+            text = "\n".join(all_text)
+            
+            # Clean and return text
             cleaned_text = self._clean_text(text)
-            logger.info(f"Cleaned text (first 200 chars): {cleaned_text[:200]}")
+            
+            # Log performance and results
+            total_time_ms = (import_time.time() - start_time) * 1000
+            self.log_performance("docx_extraction", total_time_ms, True, 
+                          {"paragraphs": len(paragraphs), "tables": len(doc.tables), 
+                           "chars": len(cleaned_text)})
+            
+            # Log sample for verification
+            sample = cleaned_text[:200] + "..." if len(cleaned_text) > 200 else cleaned_text
+            self.log_debug(f"Extracted text sample: {sample}")
+            
             return cleaned_text
             
         except Exception as e:
-            logger.error(f"Error processing DOCX: {str(e)}", exc_info=True)
+            total_time_ms = (import_time.time() - start_time) * 1000
+            self.log_performance("docx_extraction", total_time_ms, False, {"error": str(e)})
+            self.log_file_error("Error processing DOCX", 
+                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
+                         file_size, e)
             raise DocumentProcessingError(f"Error processing DOCX: {str(e)}")
     
     def _clean_text(self, text: str) -> str:

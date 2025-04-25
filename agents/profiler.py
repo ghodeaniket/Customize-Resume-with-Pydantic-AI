@@ -41,10 +41,42 @@ class ProfilerAgent(LoggerMixin):
         async def extract_resume_text(
             ctx: RunContext[ResumeCustomizerDeps], 
             file_content: bytes,
-            file_type: str
+            file_type: str = "application/octet-stream"
         ) -> str:
-            """Process and extract text from resume files."""
-            return await self.document_processor.extract_text_from_bytes(file_content, file_type)
+            """Process and extract text from resume files.
+            
+            Args:
+                ctx: Run context
+                file_content: Binary content of the file
+                file_type: MIME type of the file (defaults to application/octet-stream)
+                
+            Returns:
+                str: Extracted text from the document
+            """
+            self.log_info(f"Extracting resume text from file of type: {file_type}")
+            
+            # Input validation
+            if not isinstance(file_content, bytes):
+                self.log_error(f"Invalid file_content type: {type(file_content)}")
+                raise ValueError("file_content must be bytes")
+                
+            if not isinstance(file_type, str):
+                self.log_warning(f"Invalid file_type: {file_type!r}, using default")
+                file_type = "application/octet-stream"
+                
+            # Validate file size
+            if len(file_content) == 0:
+                self.log_error("Empty file content")
+                raise ValueError("File content is empty")
+                
+            # Extract text with robust error handling
+            try:
+                text = await self.document_processor.extract_text_from_bytes(file_content, file_type)
+                self.log_info(f"Successfully extracted {len(text)} characters from document")
+                return text
+            except Exception as e:
+                self.log_error(f"Error extracting text: {str(e)}")
+                raise e
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the profiler agent.

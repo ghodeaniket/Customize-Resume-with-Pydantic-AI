@@ -102,25 +102,47 @@ async def customize_resume_upload(
         
         # Read file content
         file_content = await resume_file.read()
+        if not file_content or len(file_content) == 0:
+            logger.error("Empty file uploaded")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "Empty file uploaded"}
+            )
+            
         logger.info(f"File size: {len(file_content)} bytes")
         
-        # Determine file type based on the filename extension
-        file_type = resume_file.content_type or "application/octet-stream"  # Default
+        # Multi-stage file type detection for maximum reliability
+        # Stage 1: Start with content type from the request
+        file_type = resume_file.content_type or "application/octet-stream"
+        logger.info(f"Initial content type from request: {file_type}")
         
+        # Stage 2: Check filename extension if available
         if resume_file.filename:
-            if resume_file.filename.lower().endswith(".pdf"):
-                file_type = "application/pdf"
-            elif resume_file.filename.lower().endswith(".docx"):
-                file_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            elif resume_file.filename.lower().endswith(".txt"):
-                file_type = "text/plain"
+            extension = resume_file.filename.lower().split('.')[-1] if '.' in resume_file.filename else ''
+            logger.info(f"File extension: {extension}")
+            
+            extension_type_map = {
+                'pdf': "application/pdf",
+                'docx': "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                'doc': "application/msword",
+                'txt': "text/plain",
+                'rtf': "application/rtf"
+            }
+            
+            if extension in extension_type_map:
+                file_type = extension_type_map[extension]
+                logger.info(f"Content type from extension: {file_type}")
         
-        logger.info(f"Using file type: {file_type}")
+        # Stage 3: Check file signatures/magic numbers (most reliable)
+        # Create document processor instance for content detection
+        document_processor = service.document_processor
+        detected_type = document_processor.detect_content_type(file_content)
         
-        # Check for PDF magic number (header signature)
-        if file_content[:4] == b'%PDF':
-            logger.info("PDF header signature detected - overriding content type")
-            file_type = "application/pdf"
+        if detected_type != "application/octet-stream":
+            logger.info(f"Content type detected from file signature: {detected_type}")
+            file_type = detected_type
+        
+        logger.info(f"Final content type being used: {file_type}")
         
         # Apply default token limit if not specified
         if max_tokens is None:

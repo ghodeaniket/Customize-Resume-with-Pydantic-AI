@@ -68,14 +68,38 @@ class StrategistAgent(LoggerMixin):
             ctx: RunContext[ResumeCustomizerDeps], 
             resume_content: str
         ) -> ProfessionalProfile:
-            """Delegate resume analysis to the Profiler agent."""
+            """Delegate resume analysis to the Profiler agent.
+            
+            Args:
+                ctx: Run context
+                resume_content: Text content of the resume
+                
+            Returns:
+                ProfessionalProfile: Structured profile of the candidate
+            """
             self.log_info("Delegating resume analysis to Profiler agent")
-            return await self.profiler_agent.analyze_resume(
-                resume_content,
-                deps=ctx.deps,
-                usage=ctx.usage if hasattr(ctx, 'usage') else None,
-                usage_limits=ctx.usage_limits if hasattr(ctx, 'usage_limits') else None
-            )
+            
+            # Validate input
+            if not resume_content or not isinstance(resume_content, str):
+                self.log_error(f"Invalid resume_content: {type(resume_content)}")
+                raise ValueError("resume_content must be a non-empty string")
+                
+            # Log the size of the content for debugging
+            self.log_debug(f"Resume content length: {len(resume_content)} characters")
+            
+            # Process the resume
+            try:
+                profile = await self.profiler_agent.analyze_resume(
+                    resume_content,
+                    deps=ctx.deps,
+                    usage=ctx.usage if hasattr(ctx, 'usage') else None,
+                    usage_limits=ctx.usage_limits if hasattr(ctx, 'usage_limits') else None
+                )
+                self.log_info("Resume analysis complete")
+                return profile
+            except Exception as e:
+                self.log_error(f"Error analyzing resume: {str(e)}")
+                raise e
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the strategist agent.

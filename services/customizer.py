@@ -116,23 +116,54 @@ class ResumeCustomizerService(LoggerMixin):
         Returns:
             CustomizationResponse: Customization response with optimized resume
         """
-        self.log_info(f"Processing resume customization from file of type {file_type}")
+        # Validate inputs
+        if not file_content or len(file_content) == 0:
+            self.log_error("Empty file content provided")
+            raise DocumentProcessingError("Empty file content provided")
+            
+        if not isinstance(file_type, str) or len(file_type.strip()) == 0:
+            self.log_warning(f"Invalid file_type: {file_type!r}, using default")
+            file_type = "application/octet-stream"
+            
+        self.log_info(f"Processing resume customization from file of type {file_type} with size {len(file_content)} bytes")
         
-        # For testing - directly use the file content as text if it's a plain text file
+        # Always check for PDF signature first
+        if len(file_content) >= 4 and file_content[:4] == b'%PDF':
+            self.log_info("PDF signature detected, processing as PDF regardless of MIME type")
+            file_type = "application/pdf"
+        # Check for DOCX signature (PK zip header)
+        elif len(file_content) >= 2 and file_content[:2] == b'PK':
+            self.log_info("DOCX/ZIP signature detected, attempting to process as DOCX")
+            file_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            
+        # Process plain text files directly if possible
         if file_type == "text/plain":
             try:
                 resume_content = file_content.decode('utf-8')
                 self.log_debug(f"Decoded text file: {resume_content[:50]}...")
             except UnicodeDecodeError:
-                self.log_error("Failed to decode text file, trying to extract text")
+                self.log_warning("Failed to decode text file, trying to extract text with processor")
                 resume_content = await self.document_processor.extract_text_from_bytes(
                     file_content, file_type
                 )
         else:
-            # Extract text from file
-            resume_content = await self.document_processor.extract_text_from_bytes(
-                file_content, file_type
-            )
+            # Extract text from file using document processor
+            try:
+                self.log_info(f"Extracting text from file using document processor with type: {file_type}")
+                resume_content = await self.document_processor.extract_text_from_bytes(
+                    file_content, file_type
+                )
+                self.log_info(f"Successfully extracted {len(resume_content)} characters from document")
+            except DocumentProcessingError as e:
+                self.log_error(f"Error in document processor: {str(e)}")
+                # Try one more time with generic file type as fallback
+                if file_type != "application/octet-stream":
+                    self.log_warning("Retrying with generic file type")
+                    resume_content = await self.document_processor.extract_text_from_bytes(
+                        file_content, "application/octet-stream"
+                    )
+                else:
+                    raise
         
         # Create request
         request = CustomizationRequest(

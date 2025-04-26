@@ -32,6 +32,7 @@ class ResumeCustomizerService(LoggerMixin):
         self.ai_provider = ai_provider
         self.document_processor = document_processor
     
+    @LoggerMixin.log_operation("resume_customization")
     async def customize_resume(
         self, 
         request: CustomizationRequest
@@ -46,7 +47,7 @@ class ResumeCustomizerService(LoggerMixin):
             
         Raises:
             ConfigurationError: If API key is missing
-            AIProviderError: If there's an error with the AI provider
+            ServiceError: If there's an error with the AI provider
             TokenLimitExceededError: If token limit is exceeded
         """
         self.log_info(f"Processing resume customization request using model {request.model_name}")
@@ -59,42 +60,38 @@ class ResumeCustomizerService(LoggerMixin):
         if request.max_tokens:
             usage_limits = UsageLimits(total_tokens_limit=request.max_tokens)
         
-        try:
-            # Create dependencies for agent
-            deps = await self.ai_provider.create_deps(model_name=request.model_name)
-            
-            # Optimize resume
-            optimized_resume = await self.strategist_agent.optimize_resume(
-                resume_content=request.resume_content,
-                job_description=request.job_description,
-                deps=deps,
-                output_format=request.output_format,
-                usage=usage,
-                usage_limits=usage_limits
-            )
-            
-            # Create response
-            response = CustomizationResponse(
-                optimized_resume=optimized_resume,
-                usage_stats={
-                    "requests": usage.requests,
-                    "request_tokens": usage.request_tokens,
-                    "response_tokens": usage.response_tokens,
-                    "total_tokens": usage.total_tokens
-                }
-            )
-            
-            self.log_info(
-                "Resume customization complete", 
-                extra={"total_tokens": usage.total_tokens}
-            )
-            
-            return response
-            
-        except Exception as e:
-            self.log_error(f"Error customizing resume: {str(e)}")
-            raise
+        # Create dependencies for agent
+        deps = await self.ai_provider.create_deps(model_name=request.model_name)
+        
+        # Optimize resume
+        optimized_resume = await self.strategist_agent.optimize_resume(
+            resume_content=request.resume_content,
+            job_description=request.job_description,
+            deps=deps,
+            output_format=request.output_format,
+            usage=usage,
+            usage_limits=usage_limits
+        )
+        
+        # Create response
+        response = CustomizationResponse(
+            optimized_resume=optimized_resume,
+            usage_stats={
+                "requests": usage.requests,
+                "request_tokens": usage.request_tokens,
+                "response_tokens": usage.response_tokens,
+                "total_tokens": usage.total_tokens
+            }
+        )
+        
+        self.log_info(
+            "Resume customization complete", 
+            extra={"total_tokens": usage.total_tokens}
+        )
+        
+        return response
     
+    @LoggerMixin.log_operation("file_resume_customization")
     async def customize_resume_from_file(
         self,
         file_content: bytes,
@@ -129,27 +126,17 @@ class ResumeCustomizerService(LoggerMixin):
             
         self.log_info(f"Processing resume customization from file of type {actual_file_type} with size {len(file_content)} bytes")
         
-        # Process plain text files directly if possible
-        if actual_file_type == TEXT_MIME_TYPE:
-            try:
-                resume_content = file_content.decode('utf-8')
-                self.log_debug(f"Decoded text file: {resume_content[:50]}...")
-            except UnicodeDecodeError:
-                self.log_warning("Failed to decode text file, trying to extract text with processor")
-                resume_content = await self.document_processor.extract_text_from_bytes(
-                    file_content, actual_file_type, filename
-                )
-        else:
-            # Extract text from file using document processor
-            try:
-                self.log_info(f"Extracting text from file using document processor with type: {actual_file_type}")
-                resume_content = await self.document_processor.extract_text_from_bytes(
-                    file_content, actual_file_type, filename
-                )
-                self.log_info(f"Successfully extracted {len(resume_content)} characters from document")
-            except DocumentProcessingError as e:
-                self.log_error(f"Error in document processor: {str(e)}")
-                raise
+        # Extract text based on file type
+        try:
+            # First try using document processor which handles different formats
+            self.log_info(f"Extracting text using document processor")
+            resume_content = await self.document_processor.extract_text_from_bytes(
+                file_content, actual_file_type, filename
+            )
+            self.log_info(f"Successfully extracted {len(resume_content)} characters from document")
+        except Exception as e:
+            self.log_error(f"Document processing error: {str(e)}")
+            raise
         
         # Create request
         request = CustomizationRequest(

@@ -37,6 +37,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add rate limiting middleware
+from api.middleware import RateLimitMiddleware
+app.add_middleware(
+    RateLimitMiddleware,
+    requests_per_minute=settings.rate_limit_per_minute if hasattr(settings, 'rate_limit_per_minute') else 60
+)
+
 # Add Prometheus metrics
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)

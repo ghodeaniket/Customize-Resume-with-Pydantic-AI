@@ -1,7 +1,9 @@
 """Logging configuration for Resume Customizer."""
+import json
 import logging
 import os
 import sys
+import time
 from typing import Any, Dict, Optional, Union
 
 from .config import get_settings
@@ -14,6 +16,56 @@ LOG_LEVELS = {
     "ERROR": logging.ERROR,
     "CRITICAL": logging.CRITICAL,
 }
+
+
+class JSONFormatter(logging.Formatter):
+    """Formatter for JSON logs."""
+    
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record as JSON.
+        
+        Args:
+            record: Log record
+            
+        Returns:
+            str: JSON formatted log
+        """
+        log_data = {
+            "timestamp": self.formatTime(record, self.datefmt),
+            "level": record.levelname,
+            "name": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno
+        }
+        
+        # Add extra fields from record
+        if hasattr(record, 'extra'):
+            log_data.update(record.extra)
+        
+        # Add exception info if available
+        if record.exc_info:
+            log_data["exception"] = self.formatException(record.exc_info)
+        
+        # Add any other extra attributes from LogRecord
+        for key, value in record.__dict__.items():
+            if key not in ['args', 'asctime', 'created', 'exc_info', 'exc_text', 
+                          'filename', 'funcName', 'id', 'levelname', 'levelno', 
+                          'lineno', 'module', 'msecs', 'message', 'msg', 
+                          'name', 'pathname', 'process', 'processName', 
+                          'relativeCreated', 'stack_info', 'thread', 'threadName',
+                          'extra']:
+                if isinstance(value, (str, int, float, bool, list, dict, type(None))):
+                    log_data[key] = value
+                else:
+                    # Convert complex objects to string
+                    try:
+                        log_data[key] = str(value)
+                    except:
+                        log_data[key] = f"<non-serializable: {type(value).__name__}>"
+        
+        return json.dumps(log_data)
 
 
 def configure_logging() -> None:
@@ -51,13 +103,18 @@ def configure_logging() -> None:
     # Create formatters
     default_formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)s:%(filename)s:%(lineno)d | %(message)s')
     detailed_formatter = logging.Formatter('%(asctime)s | %(levelname)-8s | %(name)s:%(filename)s:%(lineno)d | %(message)s | %(funcName)s | Thread: %(threadName)s')
+    json_formatter = JSONFormatter()
+    console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
+    # Use console formatter for most handlers for readability during development
     app_handler.setFormatter(default_formatter)
     error_handler.setFormatter(detailed_formatter)
     agent_handler.setFormatter(default_formatter)
     file_handler.setFormatter(detailed_formatter)
-    performance_handler.setFormatter(default_formatter)
-    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    console_handler.setFormatter(console_formatter)
+    
+    # Use JSON formatter for performance logs which are often analyzed programmatically
+    performance_handler.setFormatter(json_formatter)
     
     # Configure root logger
     root_logger = logging.getLogger()
@@ -105,6 +162,8 @@ def configure_logging() -> None:
         ('uvicorn', logging.WARNING),
         ('PyPDF2', logging.INFO),  # Increased from WARNING to INFO for debugging
         ('pydantic_ai', logging.INFO),
+        ('psutil', logging.WARNING),
+        ('fitz', logging.WARNING),  # PyMuPDF
     ]:
         specific_logger = logging.getLogger(logger_name)
         specific_logger.setLevel(logger_level)
@@ -143,6 +202,7 @@ class LoggerMixin:
         # Add common context to all logs
         extra.update({
             "component": self.__class__.__name__,
+            "timestamp_ms": int(time.time() * 1000)
         })
         
         self.logger.log(level, message, extra=extra, exc_info=exc_info)
@@ -203,6 +263,43 @@ class LoggerMixin:
         })
         
         self._log(logging.ERROR, message, extra, exc_info=exception)
+    
+    def log_operation(self, operation_name: str):
+        """Decorator to log operation start, end, and errors.
+        
+        Args:
+            operation_name: Name of the operation to log
+            
+        Returns:
+            Decorator function
+        """
+        import functools
+        import time
+        
+        def decorator(func):
+            @functools.wraps(func)
+            async def wrapper(*args, **kwargs):
+                self.log_info(f"Starting {operation_name}")
+                start_time = time.time()
+                
+                try:
+                    result = await func(*args, **kwargs)
+                    duration_ms = (time.time() - start_time) * 1000
+                    
+                    self.log_info(f"Completed {operation_name} in {duration_ms:.2f}ms")
+                    self.log_performance(operation_name, duration_ms, True)
+                    
+                    return result
+                except Exception as e:
+                    duration_ms = (time.time() - start_time) * 1000
+                    self.log_error(f"Error in {operation_name}: {str(e)}", exc_info=e)
+                    self.log_performance(operation_name, duration_ms, False, 
+                                        {"error": str(e), "error_type": type(e).__name__})
+                    raise
+                    
+            return wrapper
+        
+        return decorator
         
     def log_file_processing(self, action: str, file_type: str, file_size: int, 
                            extra: Optional[Dict[str, Any]] = None) -> None:

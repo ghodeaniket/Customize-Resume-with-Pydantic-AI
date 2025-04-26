@@ -1,6 +1,6 @@
 """File type detection utilities."""
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,50 @@ def detect_file_type(
     # 5. Fallback to generic binary
     logger.info("Using fallback octet-stream type")
     return OCTET_STREAM
+
+
+def log_file_detection(
+    file_content: bytes, 
+    detected_type: str, 
+    logger_func: Callable[[str, str, int, Optional[Dict[str, Any]]], None]
+) -> None:
+    """Log file detection results in a standardized way.
+    
+    Args:
+        file_content: Binary content of the file
+        detected_type: Detected MIME type
+        logger_func: A logging function that takes action, file_type, file_size, and extra params
+    """
+    file_size = len(file_content) if file_content else 0
+    
+    # Log the detection result based on the type
+    if detected_type == PDF_MIME_TYPE:
+        hex_header = " ".join([f"{b:02x}" for b in file_content[:20]]) if file_content else ""
+        logger_func("signature_detection", PDF_MIME_TYPE, file_size, 
+                   {"signature": "PDF", "header": hex_header})
+    
+    elif detected_type == DOCX_MIME_TYPE:
+        hex_header = " ".join([f"{b:02x}" for b in file_content[:20]]) if file_content else ""
+        logger_func("signature_detection", DOCX_MIME_TYPE, file_size,
+                   {"signature": "PK", "header": hex_header})
+    
+    elif detected_type == TEXT_MIME_TYPE:
+        sample = ""
+        try:
+            sample = file_content[:1024].decode('utf-8')[:50] if file_content else ""
+        except UnicodeDecodeError:
+            pass
+            
+        logger_func("text_detection", TEXT_MIME_TYPE, file_size,
+                   {"sample": sample})
+    
+    else:
+        # Log the first bytes for unknown type
+        if file_content and len(file_content) > 0:
+            hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
+            logger.debug(f"Unknown file type. Header bytes: {hex_header}")
+        
+        logger_func("fallback_detection", OCTET_STREAM, file_size)
 
 
 def get_file_extension(mime_type: str) -> str:

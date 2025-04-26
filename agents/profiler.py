@@ -6,6 +6,7 @@ from pydantic_ai.usage import Usage, UsageLimits
 
 from agents.models.profile import ProfessionalProfile
 from core.logging import LoggerMixin
+from core.utils.file_detection import detect_file_type
 from infrastructure.ai_provider import ResumeCustomizerDeps, PromptManager
 from infrastructure.document_processor import DocumentProcessor
 
@@ -41,7 +42,8 @@ class ProfilerAgent(LoggerMixin):
         async def extract_resume_text(
             ctx: RunContext[ResumeCustomizerDeps], 
             file_content: bytes,
-            file_type: Optional[str] = None  # Set parameter default to None for better handling
+            file_type: Optional[str] = None,  # Set parameter default to None for better handling
+            filename: Optional[str] = None
         ) -> str:
             """Process and extract text from resume files.
             
@@ -49,29 +51,12 @@ class ProfilerAgent(LoggerMixin):
                 ctx: Run context
                 file_content: Binary content of the file
                 file_type: MIME type of the file (optional, detected automatically if not provided)
+                filename: Original filename (optional)
                 
             Returns:
                 str: Extracted text from the document
             """
             self.log_info(f"extract_resume_text called with file_type: {file_type!r}")
-            
-            # Extensive input validation for file_type to handle case when LLM sends invalid data
-            if file_type is None or not isinstance(file_type, str) or len(file_type.strip()) == 0:
-                self.log_warning(f"Invalid or missing file_type parameter: {file_type!r}, using default")
-                file_type = "application/octet-stream"
-            elif len(file_type) < 4:  # Very short values like "a" are definitely wrong
-                self.log_warning(f"Suspiciously short file_type: {file_type!r}, using default")
-                file_type = "application/octet-stream"
-            # Normalize known MIME types to ensure consistency
-            elif file_type.lower() in ("pdf", ".pdf"):
-                self.log_warning(f"Received abbreviated file_type: {file_type!r}, normalizing to application/pdf")
-                file_type = "application/pdf"
-            elif file_type.lower() in ("docx", ".docx"):
-                self.log_warning(f"Received abbreviated file_type: {file_type!r}, normalizing to application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                file_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            elif file_type.lower() in ("text", "txt", ".txt"):
-                self.log_warning(f"Received abbreviated file_type: {file_type!r}, normalizing to text/plain")
-                file_type = "text/plain"
             
             # Input validation for file_content
             if not isinstance(file_content, bytes):
@@ -83,41 +68,25 @@ class ProfilerAgent(LoggerMixin):
                 self.log_error("Empty file content")
                 raise ValueError("File content is empty")
             
-            # Try to detect file type from content first (more reliable than provided type)
-            detected_type = self.document_processor.detect_content_type(file_content)
-            if detected_type != "application/octet-stream":
-                self.log_info(f"Detected file type from content: {detected_type}")
-                file_type = detected_type
+            # Normalize file_type parameter if it's an abbreviated format
+            if isinstance(file_type, str) and file_type.lower() in ("pdf", ".pdf", "docx", ".docx", "text", "txt", ".txt"):
+                self.log_warning(f"Received abbreviated file_type: {file_type!r}")
+                # Let the detect_file_type function handle normalization
+            
+            # Use the centralized file detection utility
+            detected_type = detect_file_type(file_content, file_type, filename)
+            self.log_info(f"Detected file type: {detected_type}")
                 
             # Extract text with robust error handling
             try:
-                self.log_info(f"Extracting text from file using type: {file_type}")
-                text = await self.document_processor.extract_text_from_bytes(file_content, file_type)
+                self.log_info(f"Extracting text from file using type: {detected_type}")
+                text = await self.document_processor.extract_text_from_bytes(
+                    file_content, detected_type, filename
+                )
                 self.log_info(f"Successfully extracted {len(text)} characters from document")
                 return text
             except Exception as e:
-                self.log_error(f"Error extracting text with {file_type}: {str(e)}")
-                
-                # If extraction failed and we weren't already using detected type, try with detected type
-                if file_type != detected_type and detected_type != "application/octet-stream":
-                    self.log_warning(f"Retrying extraction with detected type: {detected_type}")
-                    try:
-                        text = await self.document_processor.extract_text_from_bytes(file_content, detected_type)
-                        self.log_info(f"Successfully extracted {len(text)} characters with detected type")
-                        return text
-                    except Exception as e2:
-                        self.log_error(f"Error extracting with detected type: {str(e2)}")
-                
-                # Finally try generic binary processing as a last resort
-                if file_type != "application/octet-stream":
-                    self.log_warning("Retrying with generic application/octet-stream type")
-                    text = await self.document_processor.extract_text_from_bytes(
-                        file_content, "application/octet-stream"
-                    )
-                    self.log_info(f"Successfully extracted {len(text)} characters with generic type")
-                    return text
-                
-                # If we reach here, all extraction attempts failed
+                self.log_error(f"Error extracting text: {str(e)}")
                 raise ValueError(f"Failed to extract text from document: {str(e)}")
     
     def _get_system_prompt(self) -> str:
@@ -178,27 +147,33 @@ class ProfilerAgent(LoggerMixin):
     async def analyze_resume_file(
         self, 
         file_content: bytes,
-        file_type: str,
-        deps: ResumeCustomizerDeps,
+        file_type: Optional[str] = None,
+        deps: ResumeCustomizerDeps = None,
         usage: Optional[Usage] = None,
-        usage_limits: Optional[UsageLimits] = None
+        usage_limits: Optional[UsageLimits] = None,
+        filename: Optional[str] = None
     ) -> ProfessionalProfile:
         """Analyze a resume file and extract a professional profile.
         
         Args:
             file_content: Binary content of the resume file
-            file_type: MIME type of the file
+            file_type: MIME type of the file (optional)
             deps: Agent dependencies
             usage: Optional usage tracker
             usage_limits: Optional usage limits
+            filename: Original filename (optional)
             
         Returns:
             ProfessionalProfile: Structured profile of the candidate
         """
-        self.log_info(f"Analyzing resume file of type {file_type}")
+        # Use the centralized file detection utility
+        detected_type = detect_file_type(file_content, file_type, filename)
+        self.log_info(f"Analyzing resume file of type {detected_type}")
         
         # Extract text from the file
-        text = await self.document_processor.extract_text_from_bytes(file_content, file_type)
+        text = await self.document_processor.extract_text_from_bytes(
+            file_content, detected_type, filename
+        )
         
         # Analyze the extracted text
         return await self.analyze_resume(text, deps, usage, usage_limits)

@@ -19,6 +19,10 @@ except ImportError:
 
 from core.exceptions import DocumentProcessingError
 from core.logging import LoggerMixin
+from core.utils.file_detection import (
+    detect_file_type, PDF_MIME_TYPE, DOCX_MIME_TYPE, 
+    TEXT_MIME_TYPE, OCTET_STREAM
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +36,15 @@ class DocumentProcessor(LoggerMixin):
     async def extract_text_from_bytes(
         self, 
         file_content: bytes, 
-        file_type: Optional[str] = None
+        file_type: Optional[str] = None,
+        filename: Optional[str] = None
     ) -> str:
         """Extract text from various file formats.
         
         Args:
             file_content: Raw file content bytes
-            file_type: MIME type of the file (defaults to application/octet-stream if None or invalid)
+            file_type: MIME type of the file (optional)
+            filename: Original filename (optional)
             
         Returns:
             str: Extracted text content
@@ -49,39 +55,27 @@ class DocumentProcessor(LoggerMixin):
         try:
             start_time = import_time.time()
             
-            # Enhanced defensive validation for file_type
-            if file_type is None:
-                self.log_warning("Received None for file_type parameter, using default")
-                file_type = "application/octet-stream"
-            elif not isinstance(file_type, str):
-                self.log_warning(f"Invalid file_type parameter type: {type(file_type)}, using default")
-                file_type = "application/octet-stream"
-            elif len(file_type.strip()) == 0:
-                self.log_warning("Empty file_type parameter, using default")
-                file_type = "application/octet-stream"
-            elif len(file_type) < 4:  # Very short values like "a" are definitely wrong
-                self.log_warning(f"Suspiciously short file_type: {file_type!r}, using default")
-                file_type = "application/octet-stream"
-            
-            self.log_debug(f"Extracting text from file of type: {file_type}")
-            logger.info(f"Extracting text from file of type: {file_type}, size: {len(file_content) if file_content else 0} bytes")
-            
             # Validate file content
             if not file_content or len(file_content) == 0:
                 self.log_error("Empty file content")
-                raise DocumentProcessingError("Empty file content")
+                raise DocumentProcessingError(
+                    message="Empty file content",
+                    file_size=0
+                )
                 
             # Log hex header for debugging regardless of file type
             if len(file_content) > 0:
                 hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
                 self.log_debug(f"File header (hex): {hex_header}")
             
-            # Always check file signature first regardless of MIME type
-            # Check if this is a PDF by examining the first few bytes (PDF signature)
-            if len(file_content) >= 4 and file_content[:4] == b'%PDF':
-                self.log_debug("PDF signature detected, processing as PDF")
-                logger.info("PDF signature detected, processing as PDF regardless of MIME type")
-                
+            # Determine the file type using the centralized detection utility
+            actual_file_type = detect_file_type(file_content, file_type, filename)
+            
+            self.log_debug(f"Extracting text from file of type: {actual_file_type}")
+            logger.info(f"Extracting text from file of type: {actual_file_type}, size: {len(file_content)} bytes")
+            
+            # Process based on detected file type
+            if actual_file_type == PDF_MIME_TYPE:
                 # Try PyMuPDF first if available (more robust)
                 if PYMUPDF_AVAILABLE:
                     try:
@@ -94,32 +88,10 @@ class DocumentProcessor(LoggerMixin):
                 # Use PyPDF2 as fallback or primary method if PyMuPDF is not available
                 return self._extract_from_pdf(file_content)
             
-            # Check for DOCX signature (PK zip header)
-            if len(file_content) >= 2 and file_content[:2] == b'PK':
-                self.log_debug("DOCX/ZIP signature detected")
-                logger.info("DOCX/ZIP signature detected, attempting to process as DOCX")
-                try:
-                    return self._extract_from_docx(file_content)
-                except Exception as e:
-                    self.log_warning(f"Failed to process as DOCX: {str(e)}, falling back to MIME type")
-                    # Continue with MIME type processing
-            
-            # Process by mime type as fallback
-            if file_type == "application/pdf":
-                # Try PyMuPDF first if available
-                if PYMUPDF_AVAILABLE:
-                    try:
-                        return self._extract_from_pdf_pymupdf(file_content)
-                    except Exception as e:
-                        self.log_warning(f"PyMuPDF extraction failed for MIME-based PDF, falling back to PyPDF2: {str(e)}")
-                
-                # Use PyPDF2 as fallback
-                return self._extract_from_pdf(file_content)
-            
-            elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            elif actual_file_type == DOCX_MIME_TYPE:
                 return self._extract_from_docx(file_content)
             
-            elif file_type == "text/plain":
+            elif actual_file_type == TEXT_MIME_TYPE:
                 # For text files, just decode the bytes to string
                 try:
                     text = file_content.decode('utf-8')
@@ -131,35 +103,16 @@ class DocumentProcessor(LoggerMixin):
                     logger.info(f"Extracted text with replacement (first 100 chars): {text[:100]}")
                     return text
             
-            elif file_type == "application/octet-stream":
-                # Try to determine file type based on content
-                if len(file_content) >= 4 and file_content[:4] == b'%PDF':
-                    self.log_debug("Detected PDF from content")
-                    return self._extract_from_pdf(file_content)
-                elif len(file_content) >= 2 and file_content[:2] == b'PK':
-                    self.log_debug("Detected ZIP/DOCX from content")
-                    return self._extract_from_docx(file_content)
-                else:
-                    # Try as plain text
-                    try:
-                        text = file_content.decode('utf-8')
-                        self.log_debug("Successfully decoded as text")
-                        return text
-                    except UnicodeDecodeError:
-                        self.log_error("Unrecognized binary content")
-                        raise DocumentProcessingError("Unrecognized binary content, unable to extract text")
-            
             else:
-                self.log_warning(f"Unsupported file type: {file_type}, attempting content-based detection")
-                # Try one more time to detect file type based on content
+                self.log_warning(f"Unsupported file type: {actual_file_type}, attempting to process as text")
+                # Try one more time as plain text as last resort
                 try:
-                    # Try as plain text first
                     text = file_content.decode('utf-8', errors='replace')
-                    self.log_info(f"Processed as text with unknown MIME type: {file_type}")
+                    self.log_info(f"Processed as text with unknown MIME type: {actual_file_type}")
                     return text
                 except Exception:
-                    self.log_error(f"Failed all content detection methods for file type: {file_type}")
-                    raise DocumentProcessingError(f"Unsupported file type: {file_type}")
+                    self.log_error(f"Failed all extraction methods for file type: {actual_file_type}")
+                    raise DocumentProcessingError(f"Unsupported file type: {actual_file_type}")
         
         except Exception as e:
             self.log_error(f"Error extracting text from document: {str(e)}")
@@ -230,21 +183,46 @@ class DocumentProcessor(LoggerMixin):
                 
                 return cleaned_text
             else:
-                self.log_file_error("No text extracted from PDF", "application/pdf", file_size)
-                raise DocumentProcessingError("No text could be extracted from PDF")
+                self.log_file_error("No text extracted from PDF", PDF_MIME_TYPE, file_size)
+                raise DocumentProcessingError(
+                    message="No text could be extracted from PDF",
+                    file_type=PDF_MIME_TYPE,
+                    file_size=file_size
+                )
             
         except Exception as e:
             total_time_ms = (import_time.time() - start_time) * 1000
             self.log_performance("pdf_extraction", total_time_ms, False, {"error": str(e)})
-            self.log_file_error("Error processing PDF", "application/pdf", file_size, e)
+            self.log_file_error("Error processing PDF", PDF_MIME_TYPE, file_size, e)
+            
+            # Create details dict for more context
+            details = {
+                "extraction_method": "PyPDF2",
+                "error_type": type(e).__name__
+            }
             
             # Provide more specific error messages based on the exception
             if "file has not been decrypted" in str(e).lower():
-                raise DocumentProcessingError("PDF is encrypted and cannot be processed")
+                raise DocumentProcessingError(
+                    message="PDF is encrypted and cannot be processed",
+                    file_type=PDF_MIME_TYPE,
+                    file_size=file_size,
+                    details=details
+                )
             elif "EOF marker not found" in str(e):
-                raise DocumentProcessingError("PDF file is incomplete or corrupted")
+                raise DocumentProcessingError(
+                    message="PDF file is incomplete or corrupted",
+                    file_type=PDF_MIME_TYPE,
+                    file_size=file_size,
+                    details=details
+                )
             else:
-                raise DocumentProcessingError(f"Error processing PDF: {str(e)}")
+                raise DocumentProcessingError(
+                    message=f"Error processing PDF: {str(e)}",
+                    file_type=PDF_MIME_TYPE,
+                    file_size=file_size,
+                    details=details
+                )
     
     def _extract_from_docx(self, content: bytes) -> str:
         """Extract text from DOCX content.
@@ -300,10 +278,14 @@ class DocumentProcessor(LoggerMixin):
         except Exception as e:
             total_time_ms = (import_time.time() - start_time) * 1000
             self.log_performance("docx_extraction", total_time_ms, False, {"error": str(e)})
-            self.log_file_error("Error processing DOCX", 
-                         "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-                         file_size, e)
-            raise DocumentProcessingError(f"Error processing DOCX: {str(e)}")
+            self.log_file_error("Error processing DOCX", DOCX_MIME_TYPE, file_size, e)
+            
+            raise DocumentProcessingError(
+                message=f"Error processing DOCX: {str(e)}",
+                file_type=DOCX_MIME_TYPE,
+                file_size=file_size,
+                details={"error_type": type(e).__name__}
+            )
     
     def _clean_text(self, text: str) -> str:
         """Clean and normalize extracted text.
@@ -338,7 +320,10 @@ class DocumentProcessor(LoggerMixin):
             DocumentProcessingError: If PyMuPDF extraction fails
         """
         if not PYMUPDF_AVAILABLE:
-            raise DocumentProcessingError("PyMuPDF not available for PDF extraction")
+            raise DocumentProcessingError(
+                message="PyMuPDF not available for PDF extraction", 
+                file_type=PDF_MIME_TYPE
+            )
             
         start_time = import_time.time()
         file_size = len(content)
@@ -398,8 +383,13 @@ class DocumentProcessor(LoggerMixin):
                 
                 return cleaned_text
             else:
-                self.log_file_error("No text extracted from PDF with PyMuPDF", "application/pdf", file_size)
-                raise DocumentProcessingError("No text could be extracted from PDF with PyMuPDF")
+                self.log_file_error("No text extracted from PDF with PyMuPDF", PDF_MIME_TYPE, file_size)
+                raise DocumentProcessingError(
+                    message="No text could be extracted from PDF with PyMuPDF",
+                    file_type=PDF_MIME_TYPE,
+                    file_size=file_size,
+                    details={"extraction_method": "PyMuPDF"}
+                )
                 
         except Exception as e:
             total_time_ms = (import_time.time() - start_time) * 1000
@@ -409,13 +399,23 @@ class DocumentProcessor(LoggerMixin):
             tb = traceback.format_exc()
             self.log_error(f"PyMuPDF extraction error: {str(e)}\n{tb}")
             
-            raise DocumentProcessingError(f"PyMuPDF PDF extraction error: {str(e)}")
+            raise DocumentProcessingError(
+                message=f"PyMuPDF PDF extraction error: {str(e)}",
+                file_type=PDF_MIME_TYPE,
+                file_size=file_size,
+                details={
+                    "extraction_method": "PyMuPDF",
+                    "error_type": type(e).__name__
+                }
+            )
     
-    def detect_content_type(self, file_content: bytes) -> str:
+    def detect_content_type(self, file_content: bytes, content_type: Optional[str] = None, filename: Optional[str] = None) -> str:
         """Detect MIME type based on file content signatures.
         
         Args:
             file_content: Binary content of the file
+            content_type: MIME type from request (optional)
+            filename: Original filename (optional)
             
         Returns:
             str: Detected MIME type or application/octet-stream if unknown
@@ -423,50 +423,39 @@ class DocumentProcessor(LoggerMixin):
         file_size = len(file_content) if file_content else 0
         self.log_file_processing("content_detection", "unknown", file_size)
         
-        if not file_content or len(file_content) == 0:
-            self.log_warning("Empty file content")
-            return "application/octet-stream"
-            
-        # Check for PDF signature
-        if len(file_content) >= 4 and file_content[:4] == b'%PDF':
-            # Log first 20 bytes in hex for debugging
-            hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
-            self.log_debug(f"PDF signature detected. Header bytes: {hex_header}")
-            
-            self.log_file_processing("signature_detection", "application/pdf", file_size, 
-                                     {"signature": "PDF", "header": hex_header})
-            return "application/pdf"
-            
-        # Check for DOCX/ZIP signature (PK header)
-        if len(file_content) >= 2 and file_content[:2] == b'PK':
-            # Log first 20 bytes in hex for debugging
-            hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
-            self.log_debug(f"DOCX/ZIP signature detected. Header bytes: {hex_header}")
-            
-            self.log_file_processing("signature_detection", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-                                     file_size, {"signature": "PK", "header": hex_header})
-            return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            
-        # Check for text file by attempting to decode
-        try:
-            sample = file_content[:1024].decode('utf-8')
-            # Log first 50 chars for debugging
-            self.log_debug(f"Text content detected. Sample: {sample[:50]}...")
-            
-            self.log_file_processing("text_detection", "text/plain", file_size, 
-                                     {"sample": sample[:50]})
-            return "text/plain"
-        except UnicodeDecodeError:
-            pass
-            
-        # Log the first bytes for unknown type
-        if len(file_content) > 0:
-            hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
-            self.log_debug(f"Unknown file type. Header bytes: {hex_header}")
+        # Use the centralized file detection utility
+        detected_type = detect_file_type(file_content, content_type, filename)
         
-        # Default to generic binary
-        self.log_file_processing("fallback_detection", "application/octet-stream", file_size)
-        return "application/octet-stream"
+        # Log the detection result based on the type
+        if detected_type == PDF_MIME_TYPE:
+            hex_header = " ".join([f"{b:02x}" for b in file_content[:20]]) if file_content else ""
+            self.log_file_processing("signature_detection", PDF_MIME_TYPE, file_size, 
+                                     {"signature": "PDF", "header": hex_header})
+        
+        elif detected_type == DOCX_MIME_TYPE:
+            hex_header = " ".join([f"{b:02x}" for b in file_content[:20]]) if file_content else ""
+            self.log_file_processing("signature_detection", DOCX_MIME_TYPE, file_size,
+                                     {"signature": "PK", "header": hex_header})
+        
+        elif detected_type == TEXT_MIME_TYPE:
+            sample = ""
+            try:
+                sample = file_content[:1024].decode('utf-8')[:50] if file_content else ""
+            except UnicodeDecodeError:
+                pass
+                
+            self.log_file_processing("text_detection", TEXT_MIME_TYPE, file_size,
+                                     {"sample": sample})
+        
+        else:
+            # Log the first bytes for unknown type
+            if file_content and len(file_content) > 0:
+                hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
+                self.log_debug(f"Unknown file type. Header bytes: {hex_header}")
+            
+            self.log_file_processing("fallback_detection", OCTET_STREAM, file_size)
+        
+        return detected_type
 
 
 class DocumentBuilder(LoggerMixin):

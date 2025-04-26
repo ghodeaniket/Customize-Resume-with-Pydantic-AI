@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 from agents.models.resume import CustomizationRequest, CustomizationResponse, ResumeFormat
 from api.dependencies import get_resume_customizer_service, get_settings
 from core.config import Settings
-from core.exceptions import ResumeCustomizerError
+from core.exceptions import ResumeCustomizerError, DocumentProcessingError
+from core.utils.file_detection import detect_file_type, TEXT_MIME_TYPE
 from services.customizer import ResumeCustomizerService
 
 
@@ -111,45 +112,16 @@ async def customize_resume_upload(
             
         logger.info(f"File size: {len(file_content)} bytes")
         
-        # Multi-stage file type detection for maximum reliability
-        # Stage 1: Start with content type from the request
-        file_type = resume_file.content_type or "application/octet-stream"
-        logger.info(f"Initial content type from request: {file_type}")
-        
-        # Stage 2: Check filename extension if available
-        if resume_file.filename:
-            extension = resume_file.filename.lower().split('.')[-1] if '.' in resume_file.filename else ''
-            logger.info(f"File extension: {extension}")
-            
-            extension_type_map = {
-                'pdf': "application/pdf",
-                'docx': "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                'doc': "application/msword",
-                'txt': "text/plain",
-                'rtf': "application/rtf"
-            }
-            
-            if extension in extension_type_map:
-                file_type = extension_type_map[extension]
-                logger.info(f"Content type from extension: {file_type}")
-        
-        # Stage 3: Check file signatures/magic numbers (most reliable)
-        # Create document processor instance for content detection
-        document_processor = service.document_processor
-        detected_type = document_processor.detect_content_type(file_content)
-        
-        if detected_type != "application/octet-stream":
-            logger.info(f"Content type detected from file signature: {detected_type}")
-            file_type = detected_type
-        
-        logger.info(f"Final content type being used: {file_type}")
+        # Use the centralized file detection utility
+        file_type = detect_file_type(file_content, resume_file.content_type, resume_file.filename)
+        logger.info(f"Detected file type: {file_type}")
         
         # Apply default token limit if not specified
         if max_tokens is None:
             max_tokens = settings.default_token_limit
         
         # For plain text files, extract content directly
-        if file_type == "text/plain":
+        if file_type == TEXT_MIME_TYPE:
             try:
                 resume_content = file_content.decode('utf-8').strip()
                 logger.info(f"Extracted text content (first 100 chars): {resume_content[:100]}")
@@ -166,10 +138,9 @@ async def customize_resume_upload(
                 # Process the request
                 return await service.customize_resume(request)
             except UnicodeDecodeError:
-                logger.warning("Failed to decode as text, trying binary processing")
-                file_type = "application/octet-stream"
+                logger.warning("Failed to decode as text, will use document processor")
         
-        # For all other file types, use the file processing service
+        # For all file types (or if text decoding failed), use the document processor
         logger.info(f"Processing file as {file_type}")
         response = await service.customize_resume_from_file(
             file_content=file_content,
@@ -211,11 +182,9 @@ async def upload_test(
     """
     content = await file.read()
     text_content = None
-    file_type = file.content_type or "unknown"
     
-    # Check for PDF signature
-    if content[:4] == b'%PDF':
-        file_type = "application/pdf (detected from signature)"
+    # Use the centralized file detection utility
+    detected_type = detect_file_type(content, file.content_type, file.filename)
     
     try:
         text_content = content.decode('utf-8')
@@ -225,7 +194,7 @@ async def upload_test(
     return {
         "filename": file.filename,
         "content_type": file.content_type,
-        "detected_type": file_type,
+        "detected_type": detected_type,
         "size": len(content),
         "content_sample": text_content[:100] if text_content else None,
         "headers": dict(file.headers)

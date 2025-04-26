@@ -2,7 +2,7 @@
 import logging
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from .config import get_settings
 
@@ -127,6 +127,26 @@ class LoggerMixin:
         """
         return logging.getLogger(self.__class__.__name__)
     
+    def _log(self, level: int, message: str, extra: Optional[Dict[str, Any]] = None,
+             exc_info: Union[bool, Exception, None] = None) -> None:
+        """Internal method to log messages with standardized format.
+        
+        Args:
+            level: Log level (e.g., logging.INFO)
+            message: Message to log
+            extra: Optional extra information to include in log
+            exc_info: Exception info for error logs
+        """
+        if extra is None:
+            extra = {}
+            
+        # Add common context to all logs
+        extra.update({
+            "component": self.__class__.__name__,
+        })
+        
+        self.logger.log(level, message, extra=extra, exc_info=exc_info)
+    
     def log_info(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Log info message.
         
@@ -134,16 +154,18 @@ class LoggerMixin:
             message: Message to log
             extra: Optional extra information to include in log
         """
-        self.logger.info(message, extra=extra)
+        self._log(logging.INFO, message, extra)
     
-    def log_error(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
+    def log_error(self, message: str, extra: Optional[Dict[str, Any]] = None, 
+                  exc_info: Union[bool, Exception, None] = None) -> None:
         """Log error message.
         
         Args:
             message: Message to log
             extra: Optional extra information to include in log
+            exc_info: Exception info (True, Exception object, or None)
         """
-        self.logger.error(message, extra=extra)
+        self._log(logging.ERROR, message, extra, exc_info)
     
     def log_debug(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Log debug message.
@@ -152,7 +174,7 @@ class LoggerMixin:
             message: Message to log
             extra: Optional extra information to include in log
         """
-        self.logger.debug(message, extra=extra)
+        self._log(logging.DEBUG, message, extra)
     
     def log_warning(self, message: str, extra: Optional[Dict[str, Any]] = None) -> None:
         """Log warning message.
@@ -161,7 +183,26 @@ class LoggerMixin:
             message: Message to log
             extra: Optional extra information to include in log
         """
-        self.logger.warning(message, extra=extra)
+        self._log(logging.WARNING, message, extra)
+    
+    def log_exception(self, message: str, exception: Exception, 
+                      extra: Optional[Dict[str, Any]] = None) -> None:
+        """Log exception with full traceback.
+        
+        Args:
+            message: Message to log
+            exception: Exception object
+            extra: Optional extra information to include in log
+        """
+        if extra is None:
+            extra = {}
+            
+        extra.update({
+            "exception_type": type(exception).__name__,
+            "exception_message": str(exception)
+        })
+        
+        self._log(logging.ERROR, message, extra, exc_info=exception)
         
     def log_file_processing(self, action: str, file_type: str, file_size: int, 
                            extra: Optional[Dict[str, Any]] = None) -> None:
@@ -182,7 +223,7 @@ class LoggerMixin:
             "action": action
         })
         
-        self.logger.info(f"FILE_PROCESSING: {action} on {file_type} file ({file_size} bytes)", extra=extra)
+        self._log(logging.INFO, f"FILE_PROCESSING: {action} on {file_type} file ({file_size} bytes)", extra)
         
     def log_file_error(self, error: str, file_type: str, file_size: int, 
                       exception: Optional[Exception] = None,
@@ -205,18 +246,11 @@ class LoggerMixin:
             "error": error
         })
         
+        message = f"FILE_ERROR: {error} on {file_type} file ({file_size} bytes)"
         if exception:
-            extra["exception"] = str(exception)
-            self.logger.error(
-                f"FILE_ERROR: {error} on {file_type} file ({file_size} bytes): {str(exception)}", 
-                extra=extra,
-                exc_info=exception
-            )
-        else:
-            self.logger.error(
-                f"FILE_ERROR: {error} on {file_type} file ({file_size} bytes)", 
-                extra=extra
-            )
+            message += f": {str(exception)}"
+        
+        self._log(logging.ERROR, message, extra, exc_info=exception)
         
     def log_performance(self, operation: str, duration_ms: float, 
                        success: bool = True, extra: Optional[Dict[str, Any]] = None) -> None:

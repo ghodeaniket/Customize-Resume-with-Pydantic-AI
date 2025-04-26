@@ -5,8 +5,9 @@ from pydantic_ai.usage import Usage, UsageLimits
 
 from agents.models.resume import CustomizationRequest, CustomizationResponse, OptimizedResume, ResumeFormat
 from agents.strategist import StrategistAgent
-from core.exceptions import AIProviderError, ConfigurationError, TokenLimitExceededError
+from core.exceptions import AIProviderError, ConfigurationError, TokenLimitExceededError, DocumentProcessingError
 from core.logging import LoggerMixin
+from core.utils.file_detection import detect_file_type, PDF_MIME_TYPE, DOCX_MIME_TYPE, TEXT_MIME_TYPE
 from infrastructure.ai_provider import AIProvider
 from infrastructure.document_processor import DocumentProcessor
 
@@ -97,21 +98,23 @@ class ResumeCustomizerService(LoggerMixin):
     async def customize_resume_from_file(
         self,
         file_content: bytes,
-        file_type: str,
-        job_description: str,
+        file_type: Optional[str] = None,
+        job_description: str = "",
         model_name: str = "deepseek/deepseek-r1-distill-llama-70b",
         output_format: ResumeFormat = ResumeFormat.MARKDOWN,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        filename: Optional[str] = None
     ) -> CustomizationResponse:
         """Customize a resume from file for a specific job description.
         
         Args:
             file_content: Binary content of the resume file
-            file_type: MIME type of the file
+            file_type: MIME type of the file (optional)
             job_description: Text content of the job description
             model_name: Name of the AI model to use
             output_format: Desired output format
             max_tokens: Maximum number of tokens to generate
+            filename: Original filename (optional)
             
         Returns:
             CustomizationResponse: Customization response with optimized resume
@@ -121,49 +124,32 @@ class ResumeCustomizerService(LoggerMixin):
             self.log_error("Empty file content provided")
             raise DocumentProcessingError("Empty file content provided")
             
-        if not isinstance(file_type, str) or len(file_type.strip()) == 0:
-            self.log_warning(f"Invalid file_type: {file_type!r}, using default")
-            file_type = "application/octet-stream"
+        # Use the centralized file detection utility to determine file type
+        actual_file_type = detect_file_type(file_content, file_type, filename)
             
-        self.log_info(f"Processing resume customization from file of type {file_type} with size {len(file_content)} bytes")
+        self.log_info(f"Processing resume customization from file of type {actual_file_type} with size {len(file_content)} bytes")
         
-        # Always check for PDF signature first
-        if len(file_content) >= 4 and file_content[:4] == b'%PDF':
-            self.log_info("PDF signature detected, processing as PDF regardless of MIME type")
-            file_type = "application/pdf"
-        # Check for DOCX signature (PK zip header)
-        elif len(file_content) >= 2 and file_content[:2] == b'PK':
-            self.log_info("DOCX/ZIP signature detected, attempting to process as DOCX")
-            file_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            
         # Process plain text files directly if possible
-        if file_type == "text/plain":
+        if actual_file_type == TEXT_MIME_TYPE:
             try:
                 resume_content = file_content.decode('utf-8')
                 self.log_debug(f"Decoded text file: {resume_content[:50]}...")
             except UnicodeDecodeError:
                 self.log_warning("Failed to decode text file, trying to extract text with processor")
                 resume_content = await self.document_processor.extract_text_from_bytes(
-                    file_content, file_type
+                    file_content, actual_file_type, filename
                 )
         else:
             # Extract text from file using document processor
             try:
-                self.log_info(f"Extracting text from file using document processor with type: {file_type}")
+                self.log_info(f"Extracting text from file using document processor with type: {actual_file_type}")
                 resume_content = await self.document_processor.extract_text_from_bytes(
-                    file_content, file_type
+                    file_content, actual_file_type, filename
                 )
                 self.log_info(f"Successfully extracted {len(resume_content)} characters from document")
             except DocumentProcessingError as e:
                 self.log_error(f"Error in document processor: {str(e)}")
-                # Try one more time with generic file type as fallback
-                if file_type != "application/octet-stream":
-                    self.log_warning("Retrying with generic file type")
-                    resume_content = await self.document_processor.extract_text_from_bytes(
-                        file_content, "application/octet-stream"
-                    )
-                else:
-                    raise
+                raise
         
         # Create request
         request = CustomizationRequest(

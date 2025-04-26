@@ -4,9 +4,18 @@ import logging
 import re
 from typing import Dict, List, Optional, Tuple, Union
 import time as import_time
+import traceback
 
 import docx
 from PyPDF2 import PdfReader
+
+# Import fitz (PyMuPDF) for more robust PDF processing
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+    logging.warning("PyMuPDF (fitz) is not available; using PyPDF2 only for PDF processing")
 
 from core.exceptions import DocumentProcessingError
 from core.logging import LoggerMixin
@@ -23,13 +32,13 @@ class DocumentProcessor(LoggerMixin):
     async def extract_text_from_bytes(
         self, 
         file_content: bytes, 
-        file_type: str = "application/octet-stream"
+        file_type: Optional[str] = None
     ) -> str:
         """Extract text from various file formats.
         
         Args:
             file_content: Raw file content bytes
-            file_type: MIME type of the file (defaults to application/octet-stream if not provided)
+            file_type: MIME type of the file (defaults to application/octet-stream if None or invalid)
             
         Returns:
             str: Extracted text content
@@ -38,24 +47,51 @@ class DocumentProcessor(LoggerMixin):
             DocumentProcessingError: If file type is unsupported or extraction fails
         """
         try:
-            # Validate file_type parameter
-            if not isinstance(file_type, str) or len(file_type.strip()) == 0:
-                self.log_warning(f"Invalid file_type parameter: {file_type!r}, using default")
+            start_time = import_time.time()
+            
+            # Enhanced defensive validation for file_type
+            if file_type is None:
+                self.log_warning("Received None for file_type parameter, using default")
+                file_type = "application/octet-stream"
+            elif not isinstance(file_type, str):
+                self.log_warning(f"Invalid file_type parameter type: {type(file_type)}, using default")
+                file_type = "application/octet-stream"
+            elif len(file_type.strip()) == 0:
+                self.log_warning("Empty file_type parameter, using default")
+                file_type = "application/octet-stream"
+            elif len(file_type) < 4:  # Very short values like "a" are definitely wrong
+                self.log_warning(f"Suspiciously short file_type: {file_type!r}, using default")
                 file_type = "application/octet-stream"
             
             self.log_debug(f"Extracting text from file of type: {file_type}")
-            logger.info(f"Extracting text from file of type: {file_type}, size: {len(file_content)} bytes")
+            logger.info(f"Extracting text from file of type: {file_type}, size: {len(file_content) if file_content else 0} bytes")
             
             # Validate file content
             if not file_content or len(file_content) == 0:
                 self.log_error("Empty file content")
                 raise DocumentProcessingError("Empty file content")
+                
+            # Log hex header for debugging regardless of file type
+            if len(file_content) > 0:
+                hex_header = " ".join([f"{b:02x}" for b in file_content[:20]])
+                self.log_debug(f"File header (hex): {hex_header}")
             
             # Always check file signature first regardless of MIME type
             # Check if this is a PDF by examining the first few bytes (PDF signature)
             if len(file_content) >= 4 and file_content[:4] == b'%PDF':
                 self.log_debug("PDF signature detected, processing as PDF")
                 logger.info("PDF signature detected, processing as PDF regardless of MIME type")
+                
+                # Try PyMuPDF first if available (more robust)
+                if PYMUPDF_AVAILABLE:
+                    try:
+                        self.log_info("Attempting PDF extraction with PyMuPDF")
+                        return self._extract_from_pdf_pymupdf(file_content)
+                    except Exception as e:
+                        self.log_warning(f"PyMuPDF extraction failed, falling back to PyPDF2: {str(e)}")
+                        # Fall through to PyPDF2
+                
+                # Use PyPDF2 as fallback or primary method if PyMuPDF is not available
                 return self._extract_from_pdf(file_content)
             
             # Check for DOCX signature (PK zip header)
@@ -70,6 +106,14 @@ class DocumentProcessor(LoggerMixin):
             
             # Process by mime type as fallback
             if file_type == "application/pdf":
+                # Try PyMuPDF first if available
+                if PYMUPDF_AVAILABLE:
+                    try:
+                        return self._extract_from_pdf_pymupdf(file_content)
+                    except Exception as e:
+                        self.log_warning(f"PyMuPDF extraction failed for MIME-based PDF, falling back to PyPDF2: {str(e)}")
+                
+                # Use PyPDF2 as fallback
                 return self._extract_from_pdf(file_content)
             
             elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -281,6 +325,92 @@ class DocumentProcessor(LoggerMixin):
         
         return text.strip()
         
+    def _extract_from_pdf_pymupdf(self, content: bytes) -> str:
+        """Extract text from PDF content using PyMuPDF (more robust than PyPDF2).
+        
+        Args:
+            content: PDF file content
+            
+        Returns:
+            str: Extracted text
+            
+        Raises:
+            DocumentProcessingError: If PyMuPDF extraction fails
+        """
+        if not PYMUPDF_AVAILABLE:
+            raise DocumentProcessingError("PyMuPDF not available for PDF extraction")
+            
+        start_time = import_time.time()
+        file_size = len(content)
+        self.log_file_processing("pdf_pymupdf_extraction_start", "application/pdf", file_size)
+        
+        try:
+            # Open PDF from memory buffer
+            pdf_file = io.BytesIO(content)
+            doc = fitz.open(stream=pdf_file, filetype="pdf")
+            
+            text_parts = []
+            
+            # Process each page
+            for i, page in enumerate(doc):
+                page_start_time = import_time.time()
+                try:
+                    # Get text with more granular control
+                    page_text = page.get_text("text")
+                    page_time_ms = (import_time.time() - page_start_time) * 1000
+                    
+                    self.log_file_processing("pdf_pymupdf_page_extraction", "application/pdf", file_size,
+                                      {"page": i+1, "chars": len(page_text), "time_ms": page_time_ms})
+                    
+                    if page_text:
+                        text_parts.append(page_text)
+                        
+                except Exception as page_error:
+                    self.log_file_error(f"PyMuPDF: Error extracting text from page {i+1}",
+                                 "application/pdf", file_size, page_error)
+                    # Try alternate extraction method
+                    try:
+                        # Fallback to blocks extraction
+                        blocks = page.get_text("blocks")
+                        block_text = "\n".join([b[4] for b in blocks if isinstance(b[4], str)])
+                        if block_text:
+                            text_parts.append(block_text)
+                            self.log_debug(f"Recovered text from page {i+1} using blocks method")
+                    except Exception:
+                        # Continue with other pages
+                        pass
+            
+            # Close the document
+            doc.close()
+            
+            # Combine all text
+            if text_parts:
+                combined_text = "\n\n".join(text_parts)
+                cleaned_text = self._clean_text(combined_text)
+                
+                total_time_ms = (import_time.time() - start_time) * 1000
+                self.log_performance("pdf_pymupdf_extraction", total_time_ms, True,
+                              {"pages": len(doc), "chars": len(cleaned_text)})
+                
+                # Log sample
+                sample = cleaned_text[:200] + "..." if len(cleaned_text) > 200 else cleaned_text
+                self.log_debug(f"PyMuPDF extracted text sample: {sample}")
+                
+                return cleaned_text
+            else:
+                self.log_file_error("No text extracted from PDF with PyMuPDF", "application/pdf", file_size)
+                raise DocumentProcessingError("No text could be extracted from PDF with PyMuPDF")
+                
+        except Exception as e:
+            total_time_ms = (import_time.time() - start_time) * 1000
+            self.log_performance("pdf_pymupdf_extraction", total_time_ms, False, {"error": str(e)})
+            
+            # Include traceback in log for debugging
+            tb = traceback.format_exc()
+            self.log_error(f"PyMuPDF extraction error: {str(e)}\n{tb}")
+            
+            raise DocumentProcessingError(f"PyMuPDF PDF extraction error: {str(e)}")
+    
     def detect_content_type(self, file_content: bytes) -> str:
         """Detect MIME type based on file content signatures.
         

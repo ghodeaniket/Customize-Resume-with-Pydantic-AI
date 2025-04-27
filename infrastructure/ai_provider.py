@@ -7,6 +7,7 @@ from pydantic_ai import RunContext
 
 from core.exceptions import AIProviderError
 from core.logging import LoggerMixin
+from infrastructure.openrouter_client import OpenRouterClient
 
 
 @dataclass
@@ -16,6 +17,7 @@ class ResumeCustomizerDeps:
     http_client: httpx.AsyncClient
     openrouter_api_key: str
     model_name: str = "deepseek/deepseek-r1-distill-llama-70b"
+    model_provider: Optional[Any] = None
 
 
 class AIProvider(LoggerMixin):
@@ -32,10 +34,13 @@ class AIProvider(LoggerMixin):
         self.default_model = default_model
         self.base_url = "https://openrouter.ai/api/v1"
         self._http_client = None
+        self._openrouter_client = None
         
         if not api_key:
             self.log_error("Missing OpenRouter API key")
             raise AIProviderError("Missing OpenRouter API key")
+            
+        self.log_info(f"Initialized AIProvider with default model: {default_model}")
     
     async def create_deps(self, model_name: Optional[str] = None) -> ResumeCustomizerDeps:
         """Create dependencies for Pydantic AI agents.
@@ -47,14 +52,36 @@ class AIProvider(LoggerMixin):
             ResumeCustomizerDeps: Dependencies for agents
         """
         if self._http_client is None:
+            self.log_debug("Creating new HTTP client")
             self._http_client = httpx.AsyncClient(
                 headers={"Authorization": f"Bearer {self.api_key}"}
             )
         
+        if self._openrouter_client is None:
+            self.log_debug("Creating new OpenRouter client")
+            self._openrouter_client = OpenRouterClient(
+                api_key=self.api_key,
+                base_url=self.base_url
+            )
+        
+        # Use the specified model or default
+        actual_model_name = model_name or self.default_model
+        
+        # Create custom model provider if needed
+        # We're importing here to avoid circular imports
+        from infrastructure.model_provider import OpenRouterModel
+        model_provider = OpenRouterModel(
+            client=self._openrouter_client,
+            model_name=actual_model_name
+        )
+        
+        self.log_info(f"Created dependencies with model: {actual_model_name}")
+        
         return ResumeCustomizerDeps(
             http_client=self._http_client,
             openrouter_api_key=self.api_key,
-            model_name=model_name or self.default_model
+            model_name=actual_model_name,
+            model_provider=model_provider
         )
     
     async def close(self) -> None:
@@ -62,6 +89,12 @@ class AIProvider(LoggerMixin):
         if self._http_client is not None:
             await self._http_client.aclose()
             self._http_client = None
+            
+        if self._openrouter_client is not None:
+            await self._openrouter_client.close()
+            self._openrouter_client = None
+            
+        self.log_debug("Closed all connections")
 
 
 class PromptTemplate:

@@ -30,13 +30,22 @@ class BaseAgent(LoggerMixin):
         self.prompt_manager = prompt_manager
         self.agent_type = agent_type
         
-        # Initialize the Pydantic AI agent
+        # Initialize the Pydantic AI agent with test model for unit tests
+        # Actual model will be provided through deps.model_provider
         self.agent = Agent(
-            'test',  # Use test model for unit tests
+            'test',  # Placeholder model name, will use the model from deps
             deps_type=ResumeCustomizerDeps,
             output_type=output_type,
             system_prompt=self._get_system_prompt(),
         )
+        
+        # Configure the agent to use the model provider from dependencies
+        @self.agent.model_provider
+        def get_model_provider(deps: ResumeCustomizerDeps):
+            """Provide the model provider from dependencies."""
+            if deps.model_provider is None:
+                self.log_warning(f"No model provider found in dependencies for {self.agent_type} agent")
+            return deps.model_provider
         
         # Set dynamic system prompt for model configuration
         @self.agent.system_prompt
@@ -92,6 +101,11 @@ class BaseAgent(LoggerMixin):
             T: Agent output
         """
         self.log_info(f"Running {self.agent_type} agent")
+        
+        # Validate that we have a model provider
+        if deps.model_provider is None:
+            self.log_error(f"Missing model provider for {self.agent_type} agent")
+            raise ValueError(f"Missing model provider for {self.agent_type} agent")
         
         # Add logging context for operation
         log_context = {

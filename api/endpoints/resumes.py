@@ -168,27 +168,57 @@ async def customize_resume_upload(
 @router.post(
     "/upload-test",
     summary="Test file upload endpoint",
-    description="Test endpoint for validating file upload functionality"
+    description="Test endpoint for validating file upload functionality and text extraction"
 )
 @handle_api_errors
 async def upload_test(
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    extract_full_text: bool = Form(False)
 ) -> Dict:
-    """Test endpoint for file upload.
+    """Test endpoint for file upload and text extraction.
     
     Args:
         file: Uploaded file
+        extract_full_text: Whether to extract full text from the file (may be slower for large files)
         
     Returns:
-        dict: File information
+        dict: File information and extracted text
     """
     file_content, detected_type = await APIUtils.process_uploaded_file(file)
     
-    # Try to extract text content
+    # Default preview sample
+    preview_text = "Binary content"
+    
+    # Try to extract text directly for simple formats
     try:
-        text_content = file_content.decode('utf-8')[:100]
-    except UnicodeDecodeError:
-        text_content = "Binary content"
+        if detected_type == TEXT_MIME_TYPE:
+            preview_text = file_content.decode('utf-8')[:500]
+        else:
+            # For non-text files, attempt extraction
+            logger.info(f"Attempting text extraction from {detected_type} file")
+            
+            # Create document processor for extraction
+            from infrastructure.document_processor import DocumentProcessor
+            processor = DocumentProcessor()
+            
+            # Extract text - this will use appropriate method based on file type
+            extracted_text = await processor.extract_text_from_bytes(
+                file_content, 
+                detected_type, 
+                file.filename
+            )
+            
+            # Set preview text (first 500 chars or full text if requested)
+            if extract_full_text:
+                preview_text = extracted_text
+            else:
+                preview_text = extracted_text[:500] + ("..." if len(extracted_text) > 500 else "")
+                
+            logger.info(f"Successfully extracted {len(extracted_text)} characters from {file.filename}")
+            
+    except Exception as e:
+        logger.error(f"Text extraction failed: {str(e)}")
+        preview_text = f"Text extraction failed: {str(e)}"
     
     # For this test endpoint, we can keep the structure_response as it has no response_model validation
     return structure_response(
@@ -197,7 +227,8 @@ async def upload_test(
             "content_type": file.content_type,
             "detected_type": detected_type,
             "size": len(file_content),
-            "content_sample": text_content
+            "text_extract_length": len(preview_text),
+            "text_preview": preview_text
         },
         extra_metadata={
             "headers": dict(file.headers),

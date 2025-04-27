@@ -5,14 +5,15 @@
 git add .
 
 # Create the commit with a detailed message
-git commit -m "Fix server configuration and endpoint issues
+git commit -m "Fix server configuration and enhance file processing
 
-This commit includes several important fixes:
+This commit includes several important fixes and enhancements:
 
 1. API Endpoint Fixes:
    - Fixed response validation in FastAPI endpoints
    - Updated the endpoints to return CustomizationResponse directly
-   - Improved error handling in file processing endpoints
+   - Enhanced upload-test endpoint to extract and display PDF text content
+   - Added text extraction diagnostics for better debugging
 
 2. Agent Fixes:
    - Added missing LoggerMixin import in strategist.py
@@ -36,7 +37,7 @@ Known Issues:
 
 Testing completed:
 - Server startup successful
-- File upload and processing working
+- File upload and processing working with PDF text extraction
 - Resume customization with job description text verified
 "
 

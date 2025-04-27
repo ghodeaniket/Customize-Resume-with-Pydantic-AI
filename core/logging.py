@@ -264,14 +264,22 @@ class LoggerMixin:
         
         self._log(logging.ERROR, message, extra, exc_info=exception)
     
-    def log_operation(self, operation_name: str):
+    def log_operation(self, func=None, operation_name=None):
         """Decorator to log operation start, end, and errors.
         
+        Can be used with or without arguments:
+            @log_operation
+            async def my_func(): ...
+            
+            @log_operation(operation_name="custom_name")
+            async def my_func(): ...
+        
         Args:
-            operation_name: Name of the operation to log
+            func: The function to wrap
+            operation_name: Optional custom name for the operation
             
         Returns:
-            Decorator function
+            Decorator function or wrapped function
         """
         import functools
         import time
@@ -279,27 +287,36 @@ class LoggerMixin:
         def decorator(func):
             @functools.wraps(func)
             async def wrapper(*args, **kwargs):
-                self.log_info(f"Starting {operation_name}")
+                # Use provided operation name or function name
+                op_name = operation_name or func.__name__
+                
+                # Get self from args (instance method)
+                self_instance = args[0] if args else self
+                
+                self_instance.log_info(f"Starting {op_name}")
                 start_time = time.time()
                 
                 try:
                     result = await func(*args, **kwargs)
                     duration_ms = (time.time() - start_time) * 1000
                     
-                    self.log_info(f"Completed {operation_name} in {duration_ms:.2f}ms")
-                    self.log_performance(operation_name, duration_ms, True)
+                    self_instance.log_info(f"Completed {op_name} in {duration_ms:.2f}ms")
+                    self_instance.log_performance(op_name, duration_ms, True)
                     
                     return result
                 except Exception as e:
                     duration_ms = (time.time() - start_time) * 1000
-                    self.log_error(f"Error in {operation_name}: {str(e)}", exc_info=e)
-                    self.log_performance(operation_name, duration_ms, False, 
+                    self_instance.log_error(f"Error in {op_name}: {str(e)}", exc_info=e)
+                    self_instance.log_performance(op_name, duration_ms, False, 
                                         {"error": str(e), "error_type": type(e).__name__})
                     raise
                     
             return wrapper
         
-        return decorator
+        # Handle both @log_operation and @log_operation(operation_name="name")
+        if func is None:
+            return decorator
+        return decorator(func)
         
     def log_file_processing(self, action: str, file_type: str, file_size: int, 
                            extra: Optional[Dict[str, Any]] = None) -> None:

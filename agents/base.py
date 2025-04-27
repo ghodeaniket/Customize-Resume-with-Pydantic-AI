@@ -1,4 +1,5 @@
 """Base agent implementation for Resume Customizer."""
+import time
 from typing import Optional, Type, TypeVar, Union, Dict, Any
 
 from pydantic_ai import Agent
@@ -70,7 +71,6 @@ class BaseAgent(LoggerMixin):
             "Your task is to analyze the provided content and provide useful output."
         )
     
-    @LoggerMixin.log_operation("agent_run")
     async def run(
         self, 
         input_text: str,
@@ -105,19 +105,36 @@ class BaseAgent(LoggerMixin):
             
         self.log_debug(f"Agent context", extra=log_context)
         
-        # Run the agent
-        result = await self.agent.run(
-            input_text,
-            deps=deps,
-            usage=usage,
-            usage_limits=usage_limits
-        )
+        # Manually add operation logging that was previously handled by the decorator
+        operation_name = "agent_run"
+        self.log_info(f"Starting {operation_name}")
+        start_time = time.time()
         
-        # Log token usage
-        if usage:
-            self.log_info(f"Agent usage", extra={
-                "requests": usage.requests,
-                "total_tokens": usage.total_tokens
-            })
-        
-        return result.output
+        try:
+            # Run the agent
+            result = await self.agent.run(
+                input_text,
+                deps=deps,
+                usage=usage,
+                usage_limits=usage_limits
+            )
+            
+            # Log token usage
+            if usage:
+                self.log_info(f"Agent usage", extra={
+                    "requests": usage.requests,
+                    "total_tokens": usage.total_tokens
+                })
+                
+            duration_ms = (time.time() - start_time) * 1000
+            self.log_info(f"Completed {operation_name} in {duration_ms:.2f}ms")
+            self.log_performance(operation_name, duration_ms, True)
+            
+            return result.output
+            
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            self.log_error(f"Error in {operation_name}: {str(e)}", exc_info=e)
+            self.log_performance(operation_name, duration_ms, False, 
+                               {"error": str(e), "error_type": type(e).__name__})
+            raise

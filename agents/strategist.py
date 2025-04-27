@@ -10,6 +10,7 @@ from agents.models.profile import ProfessionalProfile
 from agents.models.resume import OptimizedResume, ResumeFormat
 from agents.profiler import ProfilerAgent
 from agents.researcher import ResearcherAgent
+from core.logging import LoggerMixin
 from infrastructure.ai_provider import ResumeCustomizerDeps, PromptManager
 
 

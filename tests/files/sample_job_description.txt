@@ -1,0 +1,48 @@
+Senior Backend Engineer - Python/FastAPI
+
+About Us:
+Tech Innovations Inc. is a leading provider of cloud-based document processing solutions for the financial industry. Our platform helps financial institutions streamline their document workflows, extract insights from complex financial documents, and automate compliance processes. We're seeking a skilled Senior Backend Engineer to join our engineering team and help build the next generation of our document processing services.
+
+Responsibilities:
+• Design, develop, and maintain backend services using Python, FastAPI, and AWS
+• Implement robust text extraction and processing systems for various document formats
+• Collaborate with cross-functional teams to define, design, and ship new features
+• Optimize existing code for performance, reliability, and maintainability
+• Lead code reviews and mentor junior developers
+• Troubleshoot production issues and implement fixes
+• Participate in agile development processes, including planning and estimation
+• Write comprehensive tests to ensure code quality and stability
+• Document technical specifications and API designs
+
+Requirements:
+• Bachelor's degree in Computer Science, Engineering, or related field
+• 5+ years of experience in backend development, with 3+ years using Python
+• Strong expertise in RESTful API design and development using FastAPI or similar frameworks
+• Experience with document processing, text extraction, or related technologies
+• Proficiency with AWS services (Lambda, S3, ECS, RDS, etc.)
+• Solid understanding of databases (PostgreSQL and/or MongoDB)
+• Experience with containerization technologies (Docker, Kubernetes)
+• Knowledge of CI/CD pipelines and DevOps practices
+• Strong problem-solving skills and attention to detail
+• Excellent communication and collaboration abilities
+
+Nice to Have:
+• Experience with PDF processing libraries like PyMuPDF, PyPDF2, or PDF.js
+• Knowledge of machine learning or NLP concepts for document analysis
+• Experience with microservices architecture
+• Familiarity with message queues (RabbitMQ, Kafka)
+• Previous work in the financial services industry
+• Contributions to open-source projects
+
+Benefits:
+• Competitive salary and equity package
+• Health, dental, and vision insurance
+• 401(k) matching program
+• Flexible work arrangements with remote options
+• Professional development budget
+• Paid time off and holidays
+• Modern work environment and tools
+
+Tech Innovations Inc. is an equal opportunity employer. We celebrate diversity and are committed to creating an inclusive environment for all employees.
+
+Location: San Francisco, CA (Hybrid) or Remote

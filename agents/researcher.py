@@ -20,13 +20,19 @@ class ResearcherAgent(BaseAgent):
         """
         super().__init__(prompt_manager, "researcher", JobRequirements)
         
-        # Tool for fetching job descriptions from URLs
+        # Tool for fetching job descriptions from URLs when needed
         @self.agent.tool
         async def fetch_job_description(
             ctx: RunContext[ResumeCustomizerDeps], 
             url: str
         ) -> str:
             """Fetch job description content from a URL."""
+            # If it doesn't look like a URL, just return the text as-is
+            if not url.startswith(('http://', 'https://')):
+                self.log_info(f"Input doesn't appear to be a URL, treating as plain text: {url[:50]}...")
+                return url
+                
+            # Otherwise try to fetch from URL
             try:
                 response = await ctx.deps.http_client.get(url)
                 response.raise_for_status()

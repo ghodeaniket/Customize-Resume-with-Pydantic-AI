@@ -33,7 +33,7 @@ async def customize_resume(
     request: CustomizationRequest,
     service: ResumeCustomizerService = Depends(get_resume_customizer_service),
     settings: Settings = Depends(get_settings)
-) -> Dict:
+) -> CustomizationResponse:
     """Customize a resume for a specific job description.
     
     Args:
@@ -42,7 +42,7 @@ async def customize_resume(
         settings: Application settings
         
     Returns:
-        Dict: Structured response with customization data and metadata
+        CustomizationResponse: Response with optimized resume
     """
     # Apply default token limit if not specified
     if request.max_tokens is None:
@@ -53,15 +53,17 @@ async def customize_resume(
     response = await service.customize_resume(request)
     processing_time_ms = round((time.time() - start_time) * 1000, 2)
     
-    # Structure response with metadata
-    return structure_response(
-        data=response,
-        extra_metadata={
+    # Log metadata but return the response directly
+    logger.info(
+        f"Resume customization completed",
+        extra={
             "processing_time_ms": processing_time_ms,
             "model_used": request.model_name,
             "output_format": request.output_format.value
         }
     )
+    
+    return response
 
 
 @router.post(
@@ -80,7 +82,7 @@ async def customize_resume_upload(
     max_tokens: Optional[int] = Form(None),
     service: ResumeCustomizerService = Depends(get_resume_customizer_service),
     settings: Settings = Depends(get_settings)
-) -> Dict:
+) -> CustomizationResponse:
     """Customize a resume from file upload for a specific job description.
     
     Args:
@@ -93,7 +95,7 @@ async def customize_resume_upload(
         settings: Application settings
         
     Returns:
-        Dict: Structured response with customization data and metadata
+        CustomizationResponse: Response with optimized resume
     """
     # Process uploaded file
     file_content, file_type = await APIUtils.process_uploaded_file(resume_file)
@@ -147,10 +149,10 @@ async def customize_resume_upload(
     
     processing_time_ms = round((time.time() - start_time) * 1000, 2)
     
-    # Structure response with metadata
-    return structure_response(
-        data=response,
-        extra_metadata={
+    # Log metadata but return the response directly
+    logger.info(
+        f"Resume file customization completed",
+        extra={
             "processing_time_ms": processing_time_ms,
             "model_used": model_name,
             "file_type": file_type,
@@ -158,10 +160,16 @@ async def customize_resume_upload(
             "output_format": output_format.value
         }
     )
+    
+    return response
 
 
 # Simple endpoint for testing file upload
-@router.post("/upload-test")
+@router.post(
+    "/upload-test",
+    summary="Test file upload endpoint",
+    description="Test endpoint for validating file upload functionality"
+)
 @handle_api_errors
 async def upload_test(
     file: UploadFile = File(...)
@@ -182,6 +190,7 @@ async def upload_test(
     except UnicodeDecodeError:
         text_content = "Binary content"
     
+    # For this test endpoint, we can keep the structure_response as it has no response_model validation
     return structure_response(
         data={
             "filename": file.filename,

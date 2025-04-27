@@ -128,6 +128,21 @@ async def generic_exception_handler(
 async def startup_event() -> None:
     """Run startup tasks."""
     logger.info(f"Starting Resume Customizer API v{settings.api_version}")
+    
+    # Set environment variables for Pydantic AI + OpenRouter integration
+    import os
+    if settings.openrouter_api_key:
+        logger.info("Setting OpenRouter API key for Pydantic AI")
+        os.environ["OPENAI_API_KEY"] = settings.openrouter_api_key
+        os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
+    else:
+        logger.warning("No OpenRouter API key found in settings")
+    
+    # Initialize prompt manager and templates
+    from infrastructure.init_prompts import init_prompt_manager
+    logger.info("Initializing prompt templates")
+    init_prompt_manager()
+    logger.info("Prompt templates initialized successfully")
 
 
 @app.on_event("shutdown")

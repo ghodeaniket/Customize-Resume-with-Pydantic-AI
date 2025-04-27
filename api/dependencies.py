@@ -24,9 +24,10 @@ def get_prompt_manager() -> PromptManager:
     """Get prompt manager instance.
     
     Returns:
-        PromptManager: Prompt manager instance
+        PromptManager: Prompt manager instance with initialized prompts
     """
-    return PromptManager()
+    from infrastructure.init_prompts import get_prompt_manager as get_initialized_manager
+    return get_initialized_manager()
 
 
 def get_document_processor() -> DocumentProcessor:

@@ -2,7 +2,7 @@
 import time
 from typing import Optional, Type, TypeVar, Union, Dict, Any
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai.usage import Usage, UsageLimits
 
 from core.logging import LoggerMixin
@@ -30,28 +30,34 @@ class BaseAgent(LoggerMixin):
         self.prompt_manager = prompt_manager
         self.agent_type = agent_type
         
-        # Initialize the Pydantic AI agent with test model for unit tests
-        # Actual model will be provided through deps.model_provider
-        self.agent = Agent(
-            'test',  # Placeholder model name, will use the model from deps
+        # Get the system prompt from prompt manager
+        system_prompt = self._get_system_prompt()
+        self.log_info(f"Using system prompt for {agent_type} agent, length: {len(system_prompt)}")
+        
+        # Get settings for model configuration
+        from core.config import get_settings
+        settings = get_settings()
+        
+        # Use OpenRouter through Pydantic AI's OpenAI compatibility
+        # When using OpenRouter via OpenAI compatibility, we use "openai:model-name"
+        # This works with the OPENAI_BASE_URL set to the OpenRouter API endpoint
+        model_identifier = "openai:gpt-4o"  # Just use a standard model identifier
+        self.log_info(f"Initializing agent with model: {model_identifier}")
+        
+        # Initialize the Pydantic AI agent with the system prompt
+        self.agent = PydanticAgent(
+            model_identifier,
             deps_type=ResumeCustomizerDeps,
             output_type=output_type,
-            system_prompt=self._get_system_prompt(),
+            system_prompt=system_prompt,
         )
-        
-        # Configure the agent to use the model provider from dependencies
-        @self.agent.model_provider
-        def get_model_provider(deps: ResumeCustomizerDeps):
-            """Provide the model provider from dependencies."""
-            if deps.model_provider is None:
-                self.log_warning(f"No model provider found in dependencies for {self.agent_type} agent")
-            return deps.model_provider
         
         # Set dynamic system prompt for model configuration
         @self.agent.system_prompt
         async def set_model(ctx):
             """Set the specific model to use via dynamic system prompt."""
-            return f"You will be using the {ctx.deps.model_name} model to process the request."
+            model_name = getattr(ctx.deps, 'model_name', 'default')
+            return f"You will be using the {model_name} model to process the request."
     
     def _get_system_prompt(self) -> str:
         """Get the system prompt for the agent.
@@ -102,11 +108,6 @@ class BaseAgent(LoggerMixin):
         """
         self.log_info(f"Running {self.agent_type} agent")
         
-        # Validate that we have a model provider
-        if deps.model_provider is None:
-            self.log_error(f"Missing model provider for {self.agent_type} agent")
-            raise ValueError(f"Missing model provider for {self.agent_type} agent")
-        
         # Add logging context for operation
         log_context = {
             "agent_type": self.agent_type,
@@ -125,6 +126,10 @@ class BaseAgent(LoggerMixin):
         start_time = time.time()
         
         try:
+            # We no longer need to set the model provider explicitly
+            # Since we're using Pydantic AI's built-in OpenRouter support
+            # through the OpenAI compatibility layer
+            
             # Run the agent
             result = await self.agent.run(
                 input_text,
@@ -142,13 +147,15 @@ class BaseAgent(LoggerMixin):
                 
             duration_ms = (time.time() - start_time) * 1000
             self.log_info(f"Completed {operation_name} in {duration_ms:.2f}ms")
-            self.log_performance(operation_name, duration_ms, True)
+            if hasattr(self, 'log_performance'):
+                self.log_performance(operation_name, duration_ms, True)
             
             return result.output
             
         except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
             self.log_error(f"Error in {operation_name}: {str(e)}", exc_info=e)
-            self.log_performance(operation_name, duration_ms, False, 
-                               {"error": str(e), "error_type": type(e).__name__})
+            if hasattr(self, 'log_performance'):
+                self.log_performance(operation_name, duration_ms, False, 
+                                {"error": str(e), "error_type": type(e).__name__})
             raise

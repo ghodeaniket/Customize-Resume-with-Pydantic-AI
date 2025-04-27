@@ -2,13 +2,13 @@
 from typing import Any, Dict, List, Optional, Union
 import time
 
-from pydantic_ai.models import ModelResponse
+# Import the core classes from pydantic_ai
+from pydantic_ai.models import ModelResponse, Model
 
 from core.logging import LoggerMixin
 from infrastructure.openrouter_client import OpenRouterClient
 
-
-class OpenRouterModel(LoggerMixin):
+class OpenRouterModel(Model, LoggerMixin):
     """Pydantic AI model implementation for OpenRouter."""
     
     def __init__(self, client: OpenRouterClient, model_name: str):
@@ -19,8 +19,41 @@ class OpenRouterModel(LoggerMixin):
             model_name: Model name (e.g., "deepseek/deepseek-r1-distill-llama-70b")
         """
         self.client = client
-        self.model_name = model_name
+        self._model_name = model_name
         self.log_info(f"Initialized OpenRouter model with model name: {model_name}")
+    
+    @property
+    def model_name(self) -> str:
+        """Get the model name.
+        
+        Returns:
+            str: Model name
+        """
+        return self._model_name
+    
+    @property
+    def system(self) -> bool:
+        """Check if the model supports system prompts.
+        
+        Returns:
+            bool: True if the model supports system prompts
+        """
+        return True
+    
+    async def request(self, *args, **kwargs) -> Dict[str, Any]:
+        """Make a raw request to the model.
+        
+        Args:
+            *args: Positional arguments
+            **kwargs: Keyword arguments
+            
+        Returns:
+            Dict[str, Any]: Raw response
+        """
+        # This is used internally by Pydantic AI
+        # We don't actually use this method directly, but we need to implement it
+        # to satisfy the abstract class requirements
+        raise NotImplementedError("Raw requests are not supported for OpenRouter")
         
     async def generate(
         self,
@@ -104,11 +137,7 @@ class OpenRouterModel(LoggerMixin):
             self.log_info(f"OpenRouter response usage", extra=response["usage"])
         
         # Create ModelResponse
-        # Based on pydantic_ai.models.ModelResponse parameter inspection,
-        # ModelResponse needs 'parts', 'model_name', 'timestamp', and 'kind'
         return ModelResponse(
-            parts=[response_text],  # Pass the response text as a list of parts
+            text=response_text,
             model_name=self.model_name,
-            timestamp=time.time(),
-            kind="llm"  # Standard kind for language model responses
         )

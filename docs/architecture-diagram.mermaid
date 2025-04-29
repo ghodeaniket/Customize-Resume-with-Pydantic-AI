@@ -1,0 +1,66 @@
+graph TD
+    subgraph "API Layer"
+        API[FastAPI Application]
+        ResumeEndpoints[Resume Endpoints]
+        Middleware[Rate Limiting & CORS]
+        API --> ResumeEndpoints
+        API --> Middleware
+    end
+
+    subgraph "Service Layer"
+        Customizer[ResumeCustomizerService]
+    end
+
+    subgraph "Agent Layer"
+        Strategist[StrategistAgent]
+        Profiler[ProfilerAgent]
+        Researcher[ResearcherAgent]
+        Strategist --> Profiler
+        Strategist --> Researcher
+    end
+
+    subgraph "Infrastructure Layer"
+        DocProcessor[DocumentProcessor]
+        AIProvider[AIProvider]
+        PromptManager[PromptManager]
+        PromptLoader[PromptLoader]
+        OpenRouterClient[OpenRouterClient]
+        ModelProvider[OpenRouterModel]
+        AIProvider --> OpenRouterClient
+        AIProvider --> ModelProvider
+        PromptManager --> PromptLoader
+    end
+
+    subgraph "Core Layer"
+        Config[Settings & Configuration]
+        Logging[Logging System]
+        Exceptions[Exception Handling]
+        FileDetection[File Detection Utils]
+    end
+
+    %% Connection between layers
+    ResumeEndpoints --> Customizer
+    Customizer --> Strategist
+    Customizer --> DocProcessor
+    Customizer --> AIProvider
+    
+    Strategist --> PromptManager
+    Profiler --> PromptManager
+    Researcher --> PromptManager
+    
+    Profiler --> DocProcessor
+    
+    ModelProvider --> OpenRouterClient
+    
+    %% Dependencies and utilities
+    Customizer --> Config
+    API --> Config
+    API --> Logging
+    API --> Exceptions
+    
+    DocProcessor --> FileDetection
+    DocProcessor --> Logging
+    
+    AIProvider --> Logging
+    PromptManager --> Logging
+    PromptLoader --> Logging

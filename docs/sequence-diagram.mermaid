@@ -1,0 +1,65 @@
+sequenceDiagram
+    participant Client
+    participant API as FastAPI Endpoints
+    participant Service as ResumeCustomizerService
+    participant Strategist as StrategistAgent
+    participant Profiler as ProfilerAgent
+    participant Researcher as ResearcherAgent
+    participant DocProc as DocumentProcessor
+    participant AI as AIProvider
+    participant OpenRouter as OpenRouterClient
+    participant LLM as AI Model (OpenRouter)
+
+    Client->>API: POST /resumes/customize or<br>/resumes/customize-upload
+    
+    alt File Upload
+        API->>DocProc: extract_text_from_bytes()
+        DocProc->>DocProc: detect_file_type()
+        
+        alt PDF File
+            DocProc->>DocProc: _extract_from_pdf_with_fallback()
+        else DOCX File
+            DocProc->>DocProc: _extract_from_docx()
+        else Text File
+            DocProc->>DocProc: _extract_from_text()
+        end
+        
+        DocProc-->>API: Extracted Resume Text
+    end
+    
+    API->>Service: customize_resume()
+    
+    Service->>AI: create_deps()
+    AI->>OpenRouter: Initialize Connection
+    AI-->>Service: Dependencies (deps)
+    
+    Service->>Strategist: optimize_resume()
+    
+    Strategist->>Profiler: get_resume_insights()
+    Profiler->>AI: run()
+    AI->>OpenRouter: chat_completion()
+    OpenRouter->>LLM: API Request
+    LLM-->>OpenRouter: Response
+    OpenRouter-->>AI: Response
+    AI-->>Profiler: ProfilerResponse
+    Profiler-->>Strategist: ProfessionalProfile
+    
+    Strategist->>Researcher: get_job_insights()
+    Researcher->>AI: run()
+    AI->>OpenRouter: chat_completion()
+    OpenRouter->>LLM: API Request
+    LLM-->>OpenRouter: Response
+    OpenRouter-->>AI: Response
+    AI-->>Researcher: ResearcherResponse
+    Researcher-->>Strategist: JobRequirements
+    
+    Strategist->>AI: run()
+    AI->>OpenRouter: chat_completion() 
+    OpenRouter->>LLM: API Request
+    LLM-->>OpenRouter: Response
+    OpenRouter-->>AI: Response
+    AI-->>Strategist: StrategistResponse
+    
+    Strategist-->>Service: OptimizedResume
+    Service-->>API: CustomizationResponse
+    API-->>Client: JSON Response with Optimized Resume

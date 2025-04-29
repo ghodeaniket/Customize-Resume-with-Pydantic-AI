@@ -1,0 +1,87 @@
+graph TD
+    subgraph "Client Side"
+        B[Browser]
+        M[Mobile App]
+        B --> LB
+        M --> LB
+    end
+
+    subgraph "Cloud Provider"
+        subgraph "Load Balancing"
+            LB[Load Balancer]
+        end
+
+        subgraph "Kubernetes Cluster"
+            subgraph "API Services"
+                API1[Resume API Pod 1]
+                API2[Resume API Pod 2]
+                APIx[...more instances]
+            end
+
+            subgraph "Background Workers"
+                W1[Worker Pod 1]
+                W2[Worker Pod 2]
+                Wx[...more workers]
+            end
+
+            subgraph "Supporting Services"
+                PM[Prometheus]
+                GRAF[Grafana]
+                LOG[Logging Service]
+            end
+        end
+
+        subgraph "Storage"
+            CACHE[Redis Cache]
+            LOG_STORE[Log Storage]
+            TEMP_STORE[Temp File Storage]
+        end
+
+        subgraph "External Services"
+            OR[OpenRouter API]
+        end
+    end
+
+    %% Connections
+    LB --> API1
+    LB --> API2
+    LB --> APIx
+
+    API1 --> W1
+    API1 --> W2
+    API2 --> W1
+    API2 --> W2
+
+    API1 --> CACHE
+    API2 --> CACHE
+    APIx --> CACHE
+
+    API1 --> OR
+    API2 --> OR
+    APIx --> OR
+
+    W1 --> OR
+    W2 --> OR
+    Wx --> OR
+
+    API1 --> TEMP_STORE
+    API2 --> TEMP_STORE
+    APIx --> TEMP_STORE
+
+    API1 --> LOG
+    API2 --> LOG
+    APIx --> LOG
+    W1 --> LOG
+    W2 --> LOG
+    Wx --> LOG
+
+    LOG --> LOG_STORE
+
+    PM --> API1
+    PM --> API2
+    PM --> APIx
+    PM --> W1
+    PM --> W2
+    PM --> Wx
+
+    GRAF --> PM

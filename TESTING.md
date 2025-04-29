@@ -1,6 +1,6 @@
 # Resume Customizer Testing Guide
 
-This guide provides steps to test the Resume Customizer API after the recent fixes.
+This guide provides steps to test the Resume Customizer API.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ Expected result: JSON response with status "ok" and system information.
 ```bash
 # Using curl
 curl -X POST http://localhost:8000/api/v1/resumes/upload-test \
-  -F "file=@tests/files/sample_resume.txt"
+  -F "file=@tests/fixtures/test_resume.txt"
 
 # Or use a tool like Postman to POST to:
 # http://localhost:8000/api/v1/resumes/upload-test
@@ -55,49 +55,54 @@ Expected result: JSON response with optimized resume and usage statistics.
 # Using curl
 curl -X POST http://localhost:8000/api/v1/resumes/customize-upload \
   -F "job_description=This is a job description for a Python developer position that requires 5+ years of experience with FastAPI..." \
-  -F "resume_file=@tests/files/sample_resume.txt" \
+  -F "resume_file=@tests/fixtures/test_resume.txt" \
   -F "output_format=markdown"
 ```
 
 Expected result: JSON response with optimized resume and usage statistics.
 
-## 5. Check Logs for Known Issues
+## 5. Running Unit Tests
 
-After running tests, check the logs for expected warnings:
-
-```bash
-# Check main log file
-cat logs/app.log
-
-# Check file processing log
-cat logs/file_processing.log
-```
-
-Expected warnings:
-- "No templates found for agent profiler"
-- "No templates found for agent researcher"
-- "No templates found for agent strategist"
-
-These warnings are expected and don't affect functionality because fallback prompts are in place.
-
-## 6. Run Automated Tests
+The project includes a comprehensive test suite organized in the `tests` directory:
 
 ```bash
-# Run the file processing test
-python test_file_processing.py
+# Run all tests
+pytest
+
+# Run specific test categories
+pytest tests/test_api/
+pytest tests/test_agents/
+pytest tests/test_infrastructure/
+pytest tests/test_services/
+
+# Run with coverage report
+pytest --cov=resume_customizer
 ```
 
-Expected result: Successful test run with both file upload and extraction tests passing.
+## 6. Test Structure
+
+The test suite is organized as follows:
+
+```
+tests/
+├── fixtures/              # Test data files
+│   ├── test_resume.txt    # Sample resume for testing
+│   └── test_job_description.txt  # Sample job description
+├── agents/                # Agent tests
+├── api/                   # API endpoint tests  
+├── core/                  # Core functionality tests
+├── services/              # Service tests
+├── test_e2e.py            # End-to-end tests
+└── conftest.py            # Test fixtures and configuration
+```
 
 ## Notes on Expected Behavior
 
-1. **Template Warnings**: You will see warnings about missing templates in the logs. This is expected and doesn't affect functionality.
+1. **File Types**: For testing, start with simple text files (.txt) before moving to more complex formats like PDF or DOCX.
 
-2. **Job Description Format**: When testing, make sure to provide actual text for the job description, not URLs.
+2. **API Response**: The API returns a proper `CustomizationResponse` object with the optimized resume and usage statistics.
 
-3. **File Types**: For testing, start with simple text files (.txt) before moving to more complex formats like PDF or DOCX.
-
-4. **API Response**: The API should now return a proper `CustomizationResponse` object without nesting it in a data/metadata structure.
+3. **Performance**: First-time requests may be slower due to prompt initialization and LLM API connection establishment.
 
 ## Troubleshooting
 
@@ -119,3 +124,11 @@ If you encounter issues:
    - Verify Python version: `python --version` (should be 3.9+)
    - Check for missing dependencies: `pip install -r requirements.txt`
    - Ensure port 8000 is not in use by another process
+
+## Architecture Documentation
+
+For a better understanding of the system, check the architecture diagrams in the `docs` directory:
+
+- `docs/architecture-diagram.mermaid` - Overall system architecture
+- `docs/sequence-diagram.mermaid` - Interaction flow
+- `docs/deployment-diagram.mermaid` - Deployment architecture

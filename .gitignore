@@ -46,6 +46,16 @@ coverage.xml
 # Log files
 logs/
 *.log
+verification.log
+
+# Security sensitive files
+# These files might contain API keys or sensitive information
+*_key*.py
+*_keys*.py
+*_secret*.py
+*_secrets*.py
+*_credentials*.py
+*_credential*.py
 
 # Uploads directory
 uploads/

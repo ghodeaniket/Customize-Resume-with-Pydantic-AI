@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify all fixes to the Resume Customizer application."""
+"""Secure verification of fixes without exposing API keys."""
 import asyncio
 import logging
 import os
@@ -18,6 +18,12 @@ logging.basicConfig(
 
 logger = logging.getLogger("verification")
 
+def mask_key(key: str) -> str:
+    """Safely mask a key for logging purposes."""
+    if not key or len(key) < 8:
+        return "INVALID_KEY"
+    return f"{key[:3]}...{key[-3:]}"
+
 async def test_environment_variables() -> Tuple[bool, str]:
     """Test environment variables for OpenRouter integration."""
     try:
@@ -27,7 +33,7 @@ async def test_environment_variables() -> Tuple[bool, str]:
         from core.config import get_settings
         settings = get_settings()
         
-        # Check OpenRouter API key
+        # Check OpenRouter API key without exposing it
         if not settings.openrouter_api_key:
             return False, "No OpenRouter API key found in settings"
         
@@ -36,13 +42,13 @@ async def test_environment_variables() -> Tuple[bool, str]:
         os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
         
         # Verify environment variables
-        openai_key = os.environ.get("OPENAI_API_KEY")
-        openai_url = os.environ.get("OPENAI_BASE_URL")
+        if not os.environ.get("OPENAI_API_KEY"):
+            return False, "Failed to set OPENAI_API_KEY environment variable"
         
-        if not openai_key or not openai_url:
-            return False, "Failed to set environment variables"
+        if not os.environ.get("OPENAI_BASE_URL"):
+            return False, "Failed to set OPENAI_BASE_URL environment variable"
         
-        logger.info(f"Successfully set environment variables")
+        logger.info("Successfully set environment variables")
         return True, "Environment variables test passed"
     
     except Exception as e:
@@ -121,7 +127,7 @@ async def test_openrouter_integration() -> Tuple[bool, str]:
         from core.config import get_settings
         settings = get_settings()
         
-        # Create AI provider
+        # Create AI provider without exposing API key
         from infrastructure.ai_provider import AIProvider
         provider = AIProvider(
             api_key=settings.openrouter_api_key,
